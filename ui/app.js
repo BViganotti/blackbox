@@ -127,6 +127,31 @@
     return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
   }
 
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // Fall through to the textarea path (permissions or insecure context).
+    }
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const copied = document.execCommand("copy");
+      area.remove();
+      return copied;
+    } catch {
+      return false;
+    }
+  }
+
   function showToast(message, kind = "") {
     const toast = $("#toast");
     if (!toast) return;
@@ -665,6 +690,12 @@
     }
 
     const actions = el("div", "chips");
+    const copy = el("button", "chip", "Copy JSON");
+    copy.addEventListener("click", async () => {
+      const ok = await copyText(JSON.stringify(record, null, 2));
+      showToast(ok ? "Event JSON copied" : "Clipboard unavailable", ok ? "ok" : "error");
+    });
+    actions.appendChild(copy);
     if (Number(record.cause_seq) > 0) {
       const cause = el("button", "chip", `Follow cause #${record.cause_seq}`);
       cause.addEventListener("click", () => selectSeq(record.cause_seq, { tab: "event" }));
