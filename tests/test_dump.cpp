@@ -2,6 +2,7 @@
 #include "support.hpp"
 
 #include <blackbox/dump.hpp>
+#include <blackbox/util/random.hpp>
 #include <blackbox/util/hex.hpp>
 
 #include <array>
@@ -275,4 +276,126 @@ BB_TEST(dump_listing_finds_and_orders_files) {
   CHECK_EQ(dumps[2].name, std::string("broken.bbx"));
   const auto limited = bb::list_dump_files(temp.path().string(), 1);
   CHECK_EQ(limited.size(), 1u);
+}
+
+namespace {
+
+bb::Record random_record(bb::Xoshiro128& random, std::uint64_t seq) {
+  bb::Record record{};
+  record.seq = seq;
+  record.trace = bb::TraceId{seq * 0x9E3779B1u + 1, seq * 0x85EBCA77u + 2};
+  record.span = seq;
+  record.correlation = seq % 4 == 0 ? 0 : seq;
+  record.cause_seq = seq > 1 ? seq - 1 : 0;
+  record.wall_ns = 1'700'000'000'000'000'000ll + static_cast<std::int64_t>(seq);
+  record.mono_ns = static_cast<std::int64_t>(seq * 13);
+  record.duration_ns = static_cast<std::int64_t>(random.bounded(1'000'000));
+  record.attr_count = static_cast<std::uint8_t>(random.bounded(4));
+  for (std::uint8_t i = 0; i < record.attr_count; ++i) {
+    const std::string key = "attr" + std::to_string(i);
+    bb::store_key(key, record.attrs[i]);
+    switch (random.bounded(5)) {
+      case 0:
+        (void)bb::store_value(bb::Value::null(), record.attrs[i].value);
+        break;
+      case 1:
+        (void)bb::store_value(bb::Value::boolean(random.next_u32() % 2 == 0),
+                              record.attrs[i].value);
+        break;
+      case 2:
+        (void)bb::store_value(
+            bb::Value::integer(static_cast<std::int64_t>(random.next_u32())),
+            record.attrs[i].value);
+        break;
+      case 3:
+        (void)bb::store_value(
+            bb::Value::floating(static_cast<double>(random.next_u32()) / 7.0),
+            record.attrs[i].value);
+        break;
+      default:
+        (void)bb::store_value(
+            bb::Value::string("text-" + std::to_string(random.bounded(200))),
+            record.attrs[i].value);
+        break;
+    }
+  }
+  switch (random.bounded(8)) {
+    case 0:
+      record.kind = bb::RecordKind::Log;
+      record.level = bb::Level::Info;
+      (void)bb::set_record_message(record, "random log");
+      break;
+    case 1:
+      record.kind = bb::RecordKind::Error;
+      record.level = bb::Level::Error;
+      record.status = random.next_u32() % 2 == 0 ? bb::Status::Timeout
+                                                 : bb::Status::Error;
+      (void)bb::set_record_message(record, "random error");
+      break;
+    case 2:
+      record.kind = bb::RecordKind::Metric;
+      record.level = bb::Level::Info;
+      (void)bb::set_record_name(record, "random.metric");
+      record.int_value = static_cast<std::int64_t>(random.next_u32());
+      (void)bb::store_value(bb::Value::integer(record.int_value), record.value);
+      break;
+    case 3:
+      record.kind = bb::RecordKind::StateChange;
+      record.level = bb::Level::Warn;
+      (void)bb::set_record_state_key(record, "random.state");
+      (void)bb::store_value(
+          bb::Value::integer(static_cast<std::int64_t>(random.bounded(10))),
+          record.state_old);
+      (void)bb::store_value(
+          bb::Value::integer(static_cast<std::int64_t>(random.bounded(10))),
+          record.state_new);
+      break;
+    case 4:
+      record.kind = bb::RecordKind::SpanBegin;
+      record.level = bb::Level::Info;
+      (void)bb::set_record_name(record, "random.span");
+      break;
+    case 5:
+      record.kind = bb::RecordKind::SpanEnd;
+      record.level = bb::Level::Info;
+      record.status = bb::Status::Ok;
+      (void)bb::set_record_name(record, "random.span");
+      break;
+    case 6:
+      record.kind = bb::RecordKind::Mark;
+      record.level = bb::Level::Info;
+      (void)bb::set_record_name(record, "random.mark");
+      break;
+    default:
+      record.kind = bb::RecordKind::Note;
+      record.level = bb::Level::Debug;
+      (void)bb::set_record_message(record, "random note");
+      break;
+  }
+  return record;
+}
+
+}  // namespace
+
+BB_TEST(dump_randomized_roundtrip) {
+  bbtest::TempDir temp;
+  bb::Xoshiro128 random(0xD00DFEED);
+  for (int iteration = 0; iteration < 40; ++iteration) {
+    const std::size_t count = 1 + random.bounded(24);
+    std::vector<bb::Record> records;
+    records.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      records.push_back(random_record(random, i + 1));
+      CHECK(bb::validate_record(records.back()));
+    }
+    const std::string path = temp.file("random-" + std::to_string(iteration) + ".bbx");
+    std::string error;
+    CHECK(bb::write_dump_file(path, records, {}, &error));
+    CHECK(error.empty());
+    const auto read = bb::read_dump_file(path);
+    CHECK(read.ok);
+    CHECK(read.complete);
+    CHECK_EQ(read.records.size(), records.size());
+    check_records_match(read.records, records);
+  }
 }
