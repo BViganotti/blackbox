@@ -128,7 +128,7 @@ The **Demo** button triggers one extra scenario through `POST /api/demo/trigger`
 - **Query** — a bounded predicate language over all fields.
 
 Keyboard: `/` focuses the query, `R` refreshes, `D` dumps, `Esc` clears the
-selection.
+selection. See [docs/ui.md](docs/ui.md) for every panel and control.
 
 ## Query language
 
@@ -223,14 +223,14 @@ build). These are host measurements, not guarantees:
 
 | Benchmark | Result |
 |---|---:|
-| Ring single-producer push | ~237 ns/event (4.2M events/s) |
-| Ring four-producer push | ~562 ns/event (1.8M events/s) |
-| Ring snapshot read | ~149 ns/record (6.7M records/s) |
-| Dump write (4096 records) | ~14.8 MiB/s |
-| Dump strict read + validate | ~101 MiB/s (677 ns/record) |
-| Query evaluation | ~9.3 ns/record |
-| Causal build + layout + explain (5000 records) | ~1.44 ms/trace |
-| Record JSON serialisation | ~181 MiB/s |
+| Ring single-producer push | ~236 ns/event (4.24M events/s) |
+| Ring four-producer push | ~480 ns/event (2.08M events/s) |
+| Ring snapshot read | ~149 ns/record (6.71M records/s) |
+| Dump write (4096 records) | ~15.8 MiB/s |
+| Dump strict read + validate | ~102 MiB/s (672 ns/record) |
+| Query evaluation | ~9.1 ns/record |
+| Causal build + layout + explain (5000 records) | ~1.48 ms/trace |
+| Record JSON serialisation | ~182 MiB/s |
 
 Run `./build/blackbox_bench` to reproduce on your machine.
 
@@ -260,6 +260,21 @@ docs/               format, architecture, query, embedding and hardening docs
   parser and HTTP parser are fuzzed or malformed-input tested.
 - Soundness beats throughput: modest performance is acceptable; UB, unbounded
   memory and silent truncation are not.
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Dump format](docs/dump-format.md)
+- [Query language](docs/query.md)
+- [Crash safety](docs/crash-safety.md)
+- [Embedding](docs/embedding.md)
+- [Workbench guide](docs/ui.md)
+- [Design decisions](docs/design-decisions.md)
+- [Performance](docs/performance.md)
+- [Testing](docs/testing.md)
+- [Security model](SECURITY.md)
+- [Limitations](LIMITATIONS.md)
+- [Documentation index](docs/README.md)
 
 ## Status
 
