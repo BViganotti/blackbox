@@ -123,6 +123,8 @@ if(BLACKBOX_BUILD_TESTS)
   add_test(NAME launcher_version COMMAND blackbox_launcher --version)
   set_tests_properties(launcher_version PROPERTIES
     PASS_REGULAR_EXPRESSION "blackbox")
+  add_test(NAME soak_smoke COMMAND blackbox_soak --seconds 2)
+  set_tests_properties(soak_smoke PROPERTIES TIMEOUT 30)
 endif()
 
 blackbox_add_executable(blackbox_launcher
@@ -134,6 +136,11 @@ target_link_libraries(blackbox_demo PRIVATE blackbox)
 
 blackbox_add_executable(blackbox_embedding
   "${CMAKE_CURRENT_SOURCE_DIR}/examples/embedding/main.cpp")
+
+if(BLACKBOX_BUILD_TESTS)
+  blackbox_add_executable(blackbox_soak
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/soak_main.cpp")
+endif()
 
 if(BLACKBOX_BUILD_BENCH)
   blackbox_add_executable(blackbox_bench "${CMAKE_CURRENT_SOURCE_DIR}/src/app/bench_main.cpp")

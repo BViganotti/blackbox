@@ -2,8 +2,9 @@ BUILD ?= build
 JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 PREFIX ?= /usr/local
 ITERATIONS ?= 30000
+SOAK_SECONDS ?= 10
 
-.PHONY: all build test asan tsan release bench fuzz install check run clean
+.PHONY: all build test asan tsan release bench fuzz soak install check run clean
 
 all: build
 
@@ -29,6 +30,9 @@ bench: build
 
 fuzz: build
 	./$(BUILD)/blackbox_fuzz --iterations $(ITERATIONS)
+
+soak: build
+	./$(BUILD)/blackbox_soak --seconds $(SOAK_SECONDS)
 
 check: test
 	./$(BUILD)/blackbox_fuzz --iterations 10000
