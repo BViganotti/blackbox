@@ -24,6 +24,7 @@
     compareRight: "",
     compareResult: null,
     compareError: "",
+    customExplanation: null,
     graphFocus: "failure",
     selectedSeq: null,
     activeTab: "failure",
@@ -305,6 +306,7 @@
       state.view = "dump";
       state.dumpMeta = data.dump || { name };
       state.queryError = "";
+      state.customExplanation = null;
       state.graphFocus = "failure";
       stopStream();
       stopPolling();
@@ -350,6 +352,7 @@
     state.view = "live";
     state.dumpMeta = null;
     state.selectedSeq = null;
+    state.customExplanation = null;
     state.graphFocus = "failure";
     $("#dump-banner")?.classList.add("hidden");
     $("#live-button")?.classList.add("hidden");
@@ -552,10 +555,57 @@
     }
   }
 
+  function renderCustomFailure(panel, data) {
+    panel.appendChild(el("div", "section-label", "Pinned explanation"));
+    const summary = el("div", "summary");
+    summary.textContent = data.summary || "No explanation available.";
+    panel.appendChild(summary);
+    panel.appendChild(
+      el(
+        "div",
+        "muted",
+        `error seq ${data.error_seq} · root seq ${data.root_seq} · ${data.chain.length} steps`,
+      ),
+    );
+    const reset = el("button", "chip", "Show latest failure");
+    reset.addEventListener("click", () => {
+      state.customExplanation = null;
+      renderFailurePanel();
+    });
+    panel.appendChild(reset);
+    panel.appendChild(el("div", "section-label", "Causal chain"));
+    const chips = el("div", "chips");
+    for (const step of data.chain || []) {
+      const chip = el(
+        "button",
+        `chip${Number(step.seq) === Number(data.root_seq) ? " root" : ""}`,
+        `${step.seq}. ${truncate(step.label || step.kind, 34)}`,
+      );
+      chip.title = `${step.kind} · ${step.level} · ${step.status}`;
+      chip.addEventListener("click", () => {
+        if (state.seqToNode.has(Number(step.seq))) {
+          selectSeq(step.seq, { tab: "event" });
+        } else {
+          showToast("That sequence is outside the UI window", "error");
+        }
+      });
+      chips.appendChild(chip);
+    }
+    panel.appendChild(chips);
+    panel.appendChild(el("div", "section-label", "Findings"));
+    (data.findings || []).forEach((finding) => {
+      panel.appendChild(el("div", "finding", finding));
+    });
+  }
+
   function renderFailurePanel() {
     const panel = $("#tab-failure");
     if (!panel) return;
     clear(panel);
+    if (state.customExplanation) {
+      renderCustomFailure(panel, state.customExplanation);
+      return;
+    }
     const failure = state.snapshot?.failure;
     if (!failure) {
       panel.appendChild(el("div", "loading", "No analysis available."));
@@ -698,6 +748,9 @@
     }
 
     const actions = el("div", "chips");
+    const explain = el("button", "chip", "Explain this event");
+    explain.addEventListener("click", () => explainEvent(record.seq));
+    actions.appendChild(explain);
     const copy = el("button", "chip", "Copy JSON");
     copy.addEventListener("click", async () => {
       const ok = await copyText(JSON.stringify(record, null, 2));
@@ -910,6 +963,20 @@
           : "",
       ),
     );
+  }
+
+  async function explainEvent(seq) {
+    try {
+      const url = new URL("/api/explain", location.origin);
+      url.searchParams.set("seq", String(seq));
+      const data = await requestJson(url);
+      state.customExplanation = data;
+      showTab("failure");
+      renderFailurePanel();
+      showToast(`Explained seq ${seq}`, "ok");
+    } catch (error) {
+      showToast(`Cannot explain event: ${error.message}`, "error");
+    }
   }
 
   function renderQueryPanel() {
@@ -1714,6 +1781,7 @@
     state.query = query;
     state.queryError = "";
     markQueryInvalid(false);
+    state.customExplanation = null;
     state.graphFocus = "failure";
     graph.autoFit = true;
     stopStream();
