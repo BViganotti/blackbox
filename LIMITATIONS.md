@@ -17,13 +17,17 @@ known and intentional boundaries, not hidden failures.
 
 ## UI and transport
 
-- Plain HTTP on loopback only, with a bearer/cookie token. There is no TLS,
-  multi-user authentication, remote access or reverse-proxy mode.
+- Plain HTTP on loopback only, with a bearer/cookie token, Host-header
+  validation and a 64-socket ceiling. There is no TLS, multi-user
+  authentication, remote access or reverse-proxy mode. TLS would require a
+  crypto dependency or platform-specific transport and is outside the
+  no-third-party, local-HTTP requirement.
 - One request per TCP connection. There is no keep-alive for ordinary requests.
 - Server-sent events send a full filtered snapshot every two seconds rather than
   a compact delta stream. This favours simple correctness over bandwidth.
-- Four concurrent SSE clients and twelve workers. Additional connections receive
-  429/503 rather than unbounded thread growth.
+- Four concurrent SSE clients, twelve workers, a 32-entry queue and a 64-socket
+  ceiling. Additional connections receive 429/503 rather than unbounded thread
+  growth. The stream skips unchanged snapshots and sends an idle heartbeat.
 - Snapshot responses are capped at 8 MiB and 4000 records. If a request would
   exceed the JSON budget it fails with an explicit error; it is not truncated.
 - Dump downloads are capped at 64 MiB even though the reader accepts 256 MiB
@@ -58,12 +62,16 @@ known and intentional boundaries, not hidden failures.
 - The string table is bounded at 16384 entries and 256 bytes per string. Dumps
   with more unique strings fail cleanly.
 - Dumps are not merged or appended. Each flush writes a complete retained window.
-- Retention deletes oldest `.bbx` files beyond `max_dumps` (default 64) on a
-  successful flush; crash dumps in the same directory are included in that
-  listing.
+- Retention deletes oldest `.bbx` files beyond `max_dumps` (default 64),
+  `max_dump_bytes` (default 512 MiB) or `max_dump_age_seconds` (default 0 =
+  disabled) on a successful flush. The just-written dump is always retained.
+  Crash dumps in the same directory are included in the listing.
 - A truncated dump is opened in recovery mode by the UI, but strict tooling
   rejects it.
 - The format has no migration path yet. Version changes require a new reader.
+- `read_dump_metadata` verifies the header and the footer structure but not every
+  record CRC. The dump list labels these as `complete` when the footer is valid;
+  opening the dump performs the full recovery/strict verification.
 
 ## Crash handling
 
@@ -93,8 +101,30 @@ known and intentional boundaries, not hidden failures.
 
 ## Build and packaging
 
-- There is no install target or package manifest yet; the build produces
-  binaries in the build directory.
+- CMake install rules and a relocatable `find_package(blackbox 1.0)` config
+  exist for static and shared libraries. There is still no signed/notarized
+  binary, Homebrew formula, Linux package or Windows target.
 - The asset embedder requires CMake but no Python or external tool.
 - No third-party libraries, vendored code, CDN assets or external fonts are
   used, by design.
+
+## Remaining non-goals / external constraints
+
+- **CI/CD** is explicitly forbidden by `REQUIREMENTS.md`; there is no
+  `.github/workflows` or other CI configuration.
+- **Windows** is not a target; POSIX and macOS system APIs are the allowed
+  platform surface.
+- **TLS, remote access and multi-user identity** would need a crypto dependency
+  or substantial platform transport work. The product is explicitly a local
+  loopback workbench.
+- **Automated browser matrix** (Safari/Firefox/Chrome) would require a
+  browser-driver dependency. The repository ships a manual Chrome smoke script
+  and server-side real-socket tests only.
+- **Framework-specific instrumentation** cannot be universal; the integration
+  guide shows adapters for request, database, retry and ledger boundaries.
+- **Sampling and cardinality control** are left to the embedder; Blackbox stores
+  what it is given, bounded by record size and ring capacity.
+- **Full trace alignment** (insert/delete-aware) is not implemented; comparison
+  is positional with state-history comparison.
+- **Hours-long production soak** is not part of CTest; the bundled soak is
+  bounded and configurable.

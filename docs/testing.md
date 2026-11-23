@@ -32,8 +32,47 @@ From the build directory:
 ctest --output-on-failure
 ```
 
-CTest runs the unit suite plus a one-second `blackbox_launcher --no-browser`
-smoke test that uses a temporary dump directory.
+CTest runs five targets:
+
+- `unit` — 153 checks across the files above,
+- `launcher_smoke` — one-second live launcher with a temporary dump directory,
+- `embedding_smoke` — headless embedder that records, analyses, dumps and reads,
+- `launcher_version` — version output,
+- `soak_smoke` — two-second concurrent demo/analyse/flush/retention run.
+
+Longer bounded soak:
+
+```sh
+make soak SOAK_SECONDS=60
+# or
+./build/blackbox_soak --seconds 60
+```
+
+The soak validates every snapshot, every cause/span/state graph, query
+evaluation, flush, dump read and retention ceiling. It is a two-to-sixty second
+smoke, not an hours-long production soak.
+
+### Manual UI smoke
+
+```sh
+SECONDS_TO_RUN=10 ./tools/ui_smoke.sh build
+```
+
+This targets macOS Chrome by default (`CHROME=...` overrides). It starts the
+launcher, verifies the loopback token URL, renders a headless screenshot and
+cleans up. It is a developer tool, not a build/runtime dependency.
+
+### Package consumption
+
+```sh
+cmake --install build --prefix /tmp/bb-install
+# separate project:
+find_package(blackbox 1.0 REQUIRED)
+target_link_libraries(app PRIVATE bb::blackbox)
+```
+
+Static and shared (`-DBLACKBOX_BUILD_SHARED=ON`) installs were both consumed by a
+separate CMake project during verification.
 
 ## Sanitizers
 
