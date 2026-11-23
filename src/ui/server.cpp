@@ -48,6 +48,7 @@ namespace {
 
 constexpr std::size_t kWorkerThreads = 12;
 constexpr std::size_t kMaxQueue = 32;
+constexpr std::size_t kMaxConnections = 64;
 constexpr std::size_t kMaxSseConnections = 4;
 constexpr std::uint64_t kDefaultLimit = 1200;
 constexpr std::uint64_t kMaxLimit = 4000;
@@ -647,6 +648,14 @@ void UiServer::Impl::accept_loop() {
     configure_socket(client);
     {
       std::lock_guard<std::mutex> guard(clients_mutex);
+      if (clients.size() >= kMaxConnections) {
+        static constexpr char kBusy[] =
+            "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n"
+            "Connection: close\r\n\r\n";
+        (void)::send(client, kBusy, sizeof(kBusy) - 1, 0);
+        ::close(client);
+        continue;
+      }
       clients.insert(client);
     }
     bool full = false;
