@@ -366,6 +366,12 @@ bool send_response(int fd, const Response& response, bool head_only) {
   head += response.cacheable ? "max-age=60" : "no-store";
   head += "\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\n";
   head += "X-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\n";
+  head += "Cross-Origin-Resource-Policy: same-origin\r\n";
+  head += "Cross-Origin-Opener-Policy: same-origin\r\n";
+  head += "Permissions-Policy: camera=(), microphone=(), geolocation=()\r\n";
+  head += "Content-Security-Policy: default-src 'self'; script-src 'self'; "
+          "style-src 'self'; connect-src 'self'; img-src 'self' data:; "
+          "base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\n";
   for (const auto& extra : response.extra_headers) {
     head += extra.first;
     head += ": ";
