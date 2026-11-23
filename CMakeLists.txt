@@ -101,6 +101,8 @@ if(BLACKBOX_BUILD_TESTS)
   add_test(NAME launcher_smoke COMMAND blackbox_launcher --no-browser
            --run-seconds 1 --dump-dir "${CMAKE_CURRENT_BINARY_DIR}/smoke-dumps")
   set_tests_properties(launcher_smoke PROPERTIES TIMEOUT 30)
+  add_test(NAME embedding_smoke COMMAND blackbox_embedding)
+  set_tests_properties(embedding_smoke PROPERTIES TIMEOUT 30)
 endif()
 
 blackbox_add_executable(blackbox_launcher
@@ -109,6 +111,9 @@ blackbox_add_executable(blackbox_launcher
 add_executable(blackbox_demo
   "${CMAKE_CURRENT_SOURCE_DIR}/examples/blackbox_demo/main.cpp")
 target_link_libraries(blackbox_demo PRIVATE blackbox)
+
+blackbox_add_executable(blackbox_embedding
+  "${CMAKE_CURRENT_SOURCE_DIR}/examples/embedding/main.cpp")
 
 if(BLACKBOX_BUILD_BENCH)
   blackbox_add_executable(blackbox_bench "${CMAKE_CURRENT_SOURCE_DIR}/src/app/bench_main.cpp")
