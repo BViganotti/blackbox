@@ -111,6 +111,13 @@ bool valid_attribute_key(std::string_view key) noexcept {
   if (key.empty() || key.size() > kMaxAttributeKeyBytes) {
     return false;
   }
+  const auto boundary = [](char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+  };
+  if (!boundary(key.front()) || !boundary(key.back())) {
+    return false;
+  }
   for (char c : key) {
     const bool alnum = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
                        (c >= '0' && c <= '9');
