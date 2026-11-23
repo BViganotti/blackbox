@@ -1590,10 +1590,14 @@
           : "rgba(97,200,255,0.45)";
       context.fillRect(start, lanes[0].y - 5, Math.min(widthPx, right - start), 10);
       if (row.begin_node !== undefined && state.records[row.begin_node]) {
+        const record = state.records[row.begin_node];
         timeline.hits.push({
           x: start,
           y: lanes[0].y,
-          seq: state.records[row.begin_node].seq,
+          seq: record.seq,
+          label: row.name,
+          detail: `span · ${row.status} · ${formatDuration(duration)}`,
+          clock: record.time,
         });
       }
     }
@@ -1617,7 +1621,14 @@
         context.arc(x, lane.y, selected ? 3.6 : isMetric ? 2 : 2.6, 0, Math.PI * 2);
       }
       context.fill();
-      timeline.hits.push({ x, y: lane.y, seq: record.seq });
+      timeline.hits.push({
+        x,
+        y: lane.y,
+        seq: record.seq,
+        label: record.name || record.state_key || record.message || record.kind,
+        detail: `${record.kind} · ${record.level}`,
+        clock: record.time,
+      });
     }
 
     if (state.selectedSeq !== null) {
@@ -1635,22 +1646,46 @@
     }
   }
 
+  function timelineHitAt(x, y) {
+    let best = null;
+    let bestDistance = 14;
+    for (const hit of timeline.hits) {
+      const distance = Math.abs(hit.x - x) + Math.abs(hit.y - y) * 0.35;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = hit;
+      }
+    }
+    return best;
+  }
+
   function bindTimeline() {
     const canvas = timeline.canvas;
     if (!canvas) return;
+    canvas.addEventListener("mousemove", (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const hit = timelineHitAt(x, y);
+      const tooltip = $("#timeline-tooltip");
+      if (!tooltip) return;
+      if (hit) {
+        tooltip.textContent = `${truncate(hit.label, 70)}\n${hit.detail} · ${formatClock(hit.clock)}`;
+        tooltip.style.left = `${Math.max(4, Math.min(x + 12, timeline.width - 250))}px`;
+        tooltip.style.top = `${Math.max(4, y - 8)}px`;
+        tooltip.classList.remove("hidden");
+      } else {
+        tooltip.classList.add("hidden");
+      }
+    });
+    canvas.addEventListener("mouseleave", () => {
+      $("#timeline-tooltip")?.classList.add("hidden");
+    });
     canvas.addEventListener("click", (event) => {
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      let best = null;
-      let bestDistance = 14;
-      for (const hit of timeline.hits) {
-        const distance = Math.abs(hit.x - x) + Math.abs(hit.y - y) * 0.35;
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          best = hit;
-        }
-      }
+      const best = timelineHitAt(x, y);
       if (best) selectSeq(best.seq, { tab: "event" });
     });
   }
