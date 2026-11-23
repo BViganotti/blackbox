@@ -436,8 +436,8 @@ struct UiServer::Impl {
   Recorder& recorder;
   std::function<void()> demo_trigger;
   std::string token;
-  int listen_fd = -1;
-  std::uint16_t port = 0;
+  std::atomic<int> listen_fd{-1};
+  std::atomic<std::uint16_t> port{0};
   std::atomic<bool> running{false};
   bool started = false;
   std::thread accept_thread;
@@ -508,8 +508,10 @@ bool UiServer::Impl::host_allowed(const Request& request) const {
   if (host == nullptr || host->empty()) {
     return false;
   }
-  const std::string with_port = "127.0.0.1:" + std::to_string(port);
-  const std::string localhost_port = "localhost:" + std::to_string(port);
+  const std::string with_port =
+      "127.0.0.1:" + std::to_string(port.load(std::memory_order_acquire));
+  const std::string localhost_port =
+      "localhost:" + std::to_string(port.load(std::memory_order_acquire));
   return *host == with_port || *host == localhost_port ||
          *host == "127.0.0.1" || *host == "localhost";
 }
@@ -554,8 +556,8 @@ bool UiServer::Impl::start(std::string* error) {
     ::close(fd);
     return false;
   }
-  listen_fd = fd;
-  port = ntohs(address.sin_port);
+  listen_fd.store(fd, std::memory_order_release);
+  port.store(ntohs(address.sin_port), std::memory_order_release);
   started_wall_ns = now_wall_ns();
   running.store(true, std::memory_order_release);
   started = true;
@@ -584,10 +586,10 @@ void UiServer::Impl::stop() {
   }
   started = false;
   running.store(false, std::memory_order_release);
-  if (listen_fd >= 0) {
-    ::shutdown(listen_fd, SHUT_RDWR);
-    ::close(listen_fd);
-    listen_fd = -1;
+  const int listener = listen_fd.exchange(-1, std::memory_order_acq_rel);
+  if (listener >= 0) {
+    ::shutdown(listener, SHUT_RDWR);
+    ::close(listener);
   }
   {
     std::lock_guard<std::mutex> guard(clients_mutex);
@@ -616,13 +618,17 @@ void UiServer::Impl::stop() {
     std::lock_guard<std::mutex> guard(clients_mutex);
     clients.clear();
   }
-  port = 0;
+  port.store(0, std::memory_order_release);
 }
 
 void UiServer::Impl::accept_loop() {
   while (running.load(std::memory_order_acquire)) {
+    const int listener = listen_fd.load(std::memory_order_acquire);
+    if (listener < 0) {
+      break;
+    }
     struct pollfd descriptor {};
-    descriptor.fd = listen_fd;
+    descriptor.fd = listener;
     descriptor.events = POLLIN;
     const int ready = ::poll(&descriptor, 1, 200);
     if (ready <= 0) {
@@ -634,7 +640,7 @@ void UiServer::Impl::accept_loop() {
     struct sockaddr_in client_address {};
     socklen_t client_length = sizeof(client_address);
     const int client = ::accept(
-        listen_fd, reinterpret_cast<struct sockaddr*>(&client_address),
+        listener, reinterpret_cast<struct sockaddr*>(&client_address),
         &client_length);
     if (client < 0) {
       if (errno == EINTR || errno == ECONNABORTED) {
@@ -1397,12 +1403,14 @@ bool UiServer::running() const {
   return impl_->running.load(std::memory_order_acquire);
 }
 
-std::uint16_t UiServer::port() const { return impl_->port; }
+std::uint16_t UiServer::port() const {
+  return impl_->port.load(std::memory_order_acquire);
+}
 
 const std::string& UiServer::token() const { return impl_->token; }
 
 std::string UiServer::url() const {
-  return "http://127.0.0.1:" + std::to_string(impl_->port) + "/?token=" +
+  return "http://127.0.0.1:" + std::to_string(port()) + "/?token=" +
          impl_->token;
 }
 
