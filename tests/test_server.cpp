@@ -205,6 +205,17 @@ BB_TEST(server_auth_assets_and_snapshot) {
   const auto missing = get(port, "/nope?token=" + token);
   CHECK_EQ(missing.status, 404);
 
+  const auto explained = get(port, "/api/explain?seq=5&token=" + token);
+  CHECK_EQ(explained.status, 200);
+  CHECK(explained.body.find("\"found\":true") != std::string::npos);
+  CHECK(explained.body.find("\"chain\":[") != std::string::npos);
+  CHECK(explained.body.find("database") != std::string::npos ||
+        explained.body.find("root_seq") != std::string::npos);
+  const auto missing_explain = get(port, "/api/explain?seq=99999&token=" + token);
+  CHECK_EQ(missing_explain.status, 404);
+  const auto bad_explain = get(port, "/api/explain?seq=nope&token=" + token);
+  CHECK_EQ(bad_explain.status, 400);
+
   const auto malformed = request(port, "GARBAGE\r\n\r\n");
   CHECK_EQ(malformed.status, 400);
 

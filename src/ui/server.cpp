@@ -466,6 +466,7 @@ struct UiServer::Impl {
   Response serve_download(const Request& request);
   Response serve_open(const Request& request);
   Response serve_compare(const Request& request);
+  Response serve_explain(const Request& request);
   Response serve_flush();
   void serve_sse(int fd, const Request& request);
   bool build_snapshot(const Request& request, std::uint64_t default_limit,
@@ -1106,6 +1107,74 @@ Response UiServer::Impl::serve_compare(const Request& request) {
   return response;
 }
 
+Response UiServer::Impl::serve_explain(const Request& request) {
+  const std::string* seq_text = request.param("seq");
+  std::uint64_t seq = 0;
+  if (seq_text == nullptr || !ui::parse_u64(*seq_text, seq)) {
+    return json_error(400, "explain requires a numeric seq");
+  }
+  RecorderSnapshot snapshot = recorder.snapshot(8192);
+  std::string graph_error;
+  const CausalGraph graph = build_causal_graph(snapshot.records, &graph_error);
+  if (!graph_error.empty()) {
+    return json_error(400, "cannot analyse the current window: " + graph_error);
+  }
+  const auto node = graph.find_seq(seq);
+  if (!node.has_value()) {
+    return json_error(404, "sequence is not in the retained window");
+  }
+  const FailureExplanation explanation = explain_failure(graph, *node);
+  const auto node_seq = [&graph](std::uint32_t index) {
+    return index < graph.records.size() ? graph.records[index].seq : 0;
+  };
+  JsonWriter out;
+  out.begin_object();
+  out.key("ok");
+  out.boolean(true);
+  out.key("seq");
+  out.number(seq);
+  out.key("found");
+  out.boolean(explanation.found);
+  out.key("summary");
+  out.string(explanation.summary);
+  out.key("root_seq");
+  out.number(node_seq(explanation.root_cause));
+  out.key("error_seq");
+  out.number(node_seq(explanation.error_node));
+  out.key("chain");
+  out.begin_array();
+  for (const std::uint32_t index : explanation.chain) {
+    out.begin_object();
+    out.key("seq");
+    out.number(node_seq(index));
+    out.key("node");
+    out.number(static_cast<std::uint64_t>(index));
+    out.key("label");
+    out.string(node_label(graph.records[index]));
+    out.key("kind");
+    out.string(to_string(graph.records[index].kind));
+    out.key("level");
+    out.string(to_string(graph.records[index].level));
+    out.key("status");
+    out.string(to_string(graph.records[index].status));
+    out.end_object();
+  }
+  out.end_array();
+  out.key("findings");
+  out.begin_array();
+  for (const std::string& finding : explanation.findings) {
+    out.string(finding);
+  }
+  out.end_array();
+  out.end_object();
+  if (!out.ok()) {
+    return json_error(500, "explanation response too large");
+  }
+  Response response;
+  response.body = out.str();
+  return response;
+}
+
 Response UiServer::Impl::serve_flush() {
   const DumpResult result = recorder.flush_dump();
   JsonWriter out;
@@ -1254,6 +1323,9 @@ Response UiServer::Impl::route(const Request& request) {
   }
   if (request.method == "GET" && request.path == "/api/compare") {
     return serve_compare(request);
+  }
+  if (request.method == "GET" && request.path == "/api/explain") {
+    return serve_explain(request);
   }
   if (request.method == "POST" && request.path == "/api/dump") {
     if (!require_post_token(request)) {
