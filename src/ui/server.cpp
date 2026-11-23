@@ -1233,7 +1233,26 @@ void UiServer::Impl::serve_sse(int fd, const Request& request) {
   if (!ui::send_all(fd, kHeaders, sizeof(kHeaders) - 1)) {
     return;
   }
+  std::uint64_t last_newest = UINT64_MAX;
+  unsigned idle_ticks = 0;
   while (running.load(std::memory_order_acquire)) {
+    const std::uint64_t newest = recorder.ring_stats().newest_seq;
+    if (newest == last_newest && idle_ticks < 10) {
+      ++idle_ticks;
+      const char heartbeat[] = ": idle\n\n";
+      if (!ui::send_all(fd, heartbeat, sizeof(heartbeat) - 1)) {
+        return;
+      }
+      for (int tick = 0; tick < 20; ++tick) {
+        if (!running.load(std::memory_order_acquire)) {
+          return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      continue;
+    }
+    idle_ticks = 0;
+    last_newest = newest;
     std::string body;
     std::string error;
     int status = 200;
