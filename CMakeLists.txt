@@ -103,6 +103,9 @@ if(BLACKBOX_BUILD_TESTS)
   set_tests_properties(launcher_smoke PROPERTIES TIMEOUT 30)
   add_test(NAME embedding_smoke COMMAND blackbox_embedding)
   set_tests_properties(embedding_smoke PROPERTIES TIMEOUT 30)
+  add_test(NAME launcher_version COMMAND blackbox_launcher --version)
+  set_tests_properties(launcher_version PROPERTIES
+    PASS_REGULAR_EXPRESSION "blackbox")
 endif()
 
 blackbox_add_executable(blackbox_launcher

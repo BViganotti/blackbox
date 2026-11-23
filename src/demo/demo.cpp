@@ -61,6 +61,7 @@ struct AppOptions {
   long run_seconds = 0;
   std::string dump_directory = default_dump_directory();
   std::size_t capacity = 8192;
+  std::size_t max_dumps = 64;
   std::string open_dump;
 };
 
@@ -92,6 +93,8 @@ void print_usage() {
       "  --open-dump PATH   open a .bbx dump in the workbench on launch\n"
       "  --no-demo          do not generate demo traffic\n"
       "  --capacity N       records to retain (8..131072)\n"
+      "  --max-dumps N      keep at most N dumps (0 disables pruning)\n"
+      "  --version          print the build version and exit\n"
       "  --help             show this help\n");
 }
 
@@ -109,6 +112,9 @@ bool parse_options(int argc, char** argv, AppOptions& options) {
       options.open_dump = argv[i];
     } else if (argument == "--help" || argument == "-h") {
       print_usage();
+      std::exit(0);
+    } else if (argument == "--version") {
+      std::printf("%s\n", bb::build_info().c_str());
       std::exit(0);
     } else if (argument == "--run-seconds") {
       if (++i >= argc) {
@@ -135,6 +141,15 @@ bool parse_options(int argc, char** argv, AppOptions& options) {
         return false;
       }
       options.capacity = static_cast<std::size_t>(value);
+    } else if (argument == "--max-dumps") {
+      if (++i >= argc) {
+        return false;
+      }
+      std::uint64_t value = 0;
+      if (!parse_u64(argv[i], value) || value > 10'000) {
+        return false;
+      }
+      options.max_dumps = static_cast<std::size_t>(value);
     } else {
       std::fprintf(stderr, "Blackbox: unknown option %s\n", argv[i]);
       return false;
@@ -334,6 +349,7 @@ int run_demo_app(int argc, char** argv) {
   RecorderConfig config;
   config.ring_capacity = options.capacity;
   config.dump_directory = options.dump_directory;
+  config.max_dumps = options.max_dumps;
   config.install_crash_handlers = true;
   Recorder recorder(config);
   DemoService demo(recorder, DemoConfig{1200, 12});
