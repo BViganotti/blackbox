@@ -46,11 +46,34 @@ and the project uses semantic versioning.
 - Documentation: architecture, dump format, query language, embedding, crash
   safety, UI, design decisions, performance, testing and security; MIT license.
 
+### Fixed and hardened
+
+- Dump writer and reader now share a 256 MiB size contract, with a per-write
+  override; oversized writes fail without publishing a final file.
+- Dump metadata distinguishes header validity from footer completeness, and the
+  dump browser labels complete vs header-only bundles.
+- Dump retention supports count, total bytes and optional age; the just-written
+  dump is always kept.
+- A recursive dump-directory guard prevents retention from unlinking a bundle
+  during list/download/open/compare.
+- Crash encoding no longer relies on `memcpy`; supported targets assert lock-free
+  64-bit atomics. Spans survive early Recorder destruction as safe no-ops, and
+  `RequestScope` gives embedders a correct request boundary.
+- HTTP requests must carry the correct loopback Host header; concurrent sockets
+  are capped at 64; CSP, same-origin policies and permissions policy are sent
+  on every response.
+- SSE streams send idle heartbeats instead of unchanged analysis documents.
+- Added `/api/explain?seq=` and a pinned Event explanation in the UI.
+- Added relocatable CMake package config/export, static or shared library
+  builds and consumer verification.
+- Added a concurrent soak executable, CTest soak smoke and a manual headless
+  Chrome UI smoke script.
+
 ### Security
 
-- The UI binds only to `127.0.0.1`, uses a 128-bit random session token and
-  never exposes arbitrary file paths. Mutation endpoints require the token
-  header.
+- The UI binds only to `127.0.0.1`, validates loopback Host headers, uses a
+  128-bit random session token and never exposes arbitrary file paths.
+  Mutation endpoints require the token header.
 - JSON output validates UTF-8 and rejects non-finite numbers.
 - Dump and query readers are bounded before allocation and fuzzed.
 

@@ -12,7 +12,9 @@ Start with the repository [README](../README.md) for build and launch commands.
 | [ui.md](ui.md) | every workbench panel and control |
 | [design-decisions.md](design-decisions.md) | trade-offs and rejected alternatives |
 | [performance.md](performance.md) | benchmark methodology and reference results |
-| [testing.md](testing.md) | test inventory, sanitizers, fuzzing, benchmarks |
+| [testing.md](testing.md) | test inventory, sanitizers, fuzzing, soak, benchmarks |
+| [packaging.md](packaging.md) | install, CMake package, shared/static ABI scope |
+| [integration.md](integration.md) | adapters for requests, DB calls, retries and shutdown |
 
 Project-level records:
 
