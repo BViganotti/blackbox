@@ -96,6 +96,7 @@ if(BLACKBOX_BUILD_TESTS)
   )
   add_executable(blackbox_tests ${BLACKBOX_TEST_SOURCES})
   target_link_libraries(blackbox_tests PRIVATE blackbox)
+  target_include_directories(blackbox_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   add_test(NAME unit COMMAND blackbox_tests)
   add_test(NAME launcher_smoke COMMAND blackbox_launcher --no-browser
            --run-seconds 1 --dump-dir "${CMAKE_CURRENT_BINARY_DIR}/smoke-dumps")
