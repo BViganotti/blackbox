@@ -87,6 +87,15 @@ class Ring {
   /// Resets counters and the sequence window. Requires exclusive access.
   void clear();
 
+  /// Visits every currently readable record in ascending sequence order without
+  /// allocating or taking a lock. Returns the number of visited records. The
+  /// visitor returns false to stop early. This method is async-signal-safe when
+  /// called from a handler while no other thread destroys the ring; it is used
+  /// by the crash dumper. Records overwritten during the walk are skipped.
+  using SignalVisitor = bool (*)(void* context, const Record& record);
+  std::size_t for_each_published_signal(SignalVisitor visitor,
+                                        void* context) const noexcept;
+
  private:
   static constexpr std::size_t kRecordWords = (sizeof(Record) + 7) / 8;
 

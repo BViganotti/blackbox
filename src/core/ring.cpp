@@ -189,6 +189,33 @@ std::size_t Ring::memory_bytes() const noexcept {
   return capacity_ * sizeof(Slot);
 }
 
+std::size_t Ring::for_each_published_signal(SignalVisitor visitor,
+                                            void* context) const noexcept {
+  if (visitor == nullptr) {
+    return 0;
+  }
+  const std::uint64_t next = next_seq_.load(std::memory_order_acquire);
+  const std::uint64_t newest = next - 1;
+  if (newest == 0) {
+    return 0;
+  }
+  const std::uint64_t oldest = oldest_for(next);
+  std::size_t visited = 0;
+  for (std::uint64_t seq = oldest;; ++seq) {
+    Record record;
+    if (read_slot(seq, record)) {
+      if (!visitor(context, record)) {
+        break;
+      }
+      ++visited;
+    }
+    if (seq == newest) {
+      break;
+    }
+  }
+  return visited;
+}
+
 void Ring::clear() {
   next_seq_.store(1, std::memory_order_release);
   overwritten_.store(0, std::memory_order_relaxed);

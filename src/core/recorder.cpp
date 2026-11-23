@@ -1,5 +1,7 @@
 #include <blackbox/recorder.hpp>
 
+#include <blackbox/crash.hpp>
+
 #include <blackbox/util/random.hpp>
 #include <blackbox/util/time.hpp>
 
@@ -30,9 +32,20 @@ Recorder::Recorder(RecorderConfig config)
   if (token_ == 0) {
     token_ = 1;
   }
+  if (config_.install_crash_handlers && !config_.dump_directory.empty()) {
+    std::string error;
+    crash_installed_ = install_crash_handler(ring_, config_.dump_directory, &error);
+    if (!crash_installed_) {
+      crash_error_ = error;
+    }
+  }
 }
 
-Recorder::~Recorder() = default;
+Recorder::~Recorder() {
+  if (crash_installed_) {
+    (void)uninstall_crash_handler(&ring_);
+  }
+}
 
 Recorder::ThreadState& Recorder::state() const {
   static thread_local ThreadState local;

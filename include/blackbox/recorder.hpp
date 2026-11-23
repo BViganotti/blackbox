@@ -22,6 +22,8 @@ struct RecorderConfig {
   std::size_t ring_capacity = Ring::kDefaultCapacity;
   /// Directory for flushed dumps. Empty disables flush_dump().
   std::string dump_directory;
+  /// Install the async-signal-safe crash handler when dump_directory is set.
+  bool install_crash_handlers = true;
 
   RecorderConfig() = default;
   explicit RecorderConfig(std::size_t capacity) : ring_capacity(capacity) {}
@@ -195,6 +197,14 @@ class Recorder {
   /// empty vector when no directory is configured.
   std::vector<DumpFileInfo> list_dumps(std::size_t limit = 64) const;
 
+  /// True when this recorder installed the process crash handler. A failed
+  /// installation is reported through crash_error() but does not fail
+  /// construction: recording continues without crash dumps.
+  bool crash_handler_active() const noexcept { return crash_installed_; }
+
+  /// Empty when crash handler installation succeeded or was not requested.
+  const std::string& crash_error() const noexcept { return crash_error_; }
+
  private:
   struct SpanFrame {
     SpanId span = kNoSpan;
@@ -215,6 +225,8 @@ class Recorder {
   std::uint64_t token_ = 0;
   RecorderStats counters_;
   std::mutex dump_mutex_;
+  bool crash_installed_ = false;
+  std::string crash_error_;
 };
 
 }  // namespace bb
