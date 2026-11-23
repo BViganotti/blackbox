@@ -327,3 +327,69 @@ BB_TEST(causal_compare_traces_detects_state_divergence) {
   CHECK_EQ(result.left_value.as_string(), std::string("busy"));
   CHECK_EQ(result.right_value.as_string(), std::string("failed"));
 }
+
+BB_TEST(causal_randomized_graphs_remain_acyclic) {
+  bb::Xoshiro128 random(0xCA05A1);
+  for (int round = 0; round < 20; ++round) {
+    const std::uint64_t count = 1 + random.bounded(120);
+    const bb::TraceId trace{0xDEAD0000ull + round, 0xBEEF0000ull + round};
+    std::vector<bb::Record> records;
+    records.reserve(count);
+    for (std::uint64_t i = 1; i <= count; ++i) {
+      bb::Record record = base_record(i, trace);
+      record.span = i;
+      record.cause_seq = i > 1 ? 1 + random.bounded(static_cast<std::uint32_t>(i - 1)) : 0;
+      if (i % 10 == 1) {
+        record.kind = bb::RecordKind::SpanBegin;
+        (void)bb::set_record_name(record, "random.span");
+      } else if (i % 10 == 6 && i > 5) {
+        record.kind = bb::RecordKind::SpanEnd;
+        record.span = i - 5;
+        record.status = bb::Status::Ok;
+        (void)bb::set_record_name(record, "random.span");
+      } else if (i % 17 == 0) {
+        record.kind = bb::RecordKind::Error;
+        record.level = bb::Level::Error;
+        record.status = bb::Status::Timeout;
+        (void)bb::set_record_message(record, "random failure");
+      } else {
+        record.kind = bb::RecordKind::Log;
+        record.level = bb::Level::Info;
+        (void)bb::set_record_message(record, "random log");
+      }
+      CHECK(bb::validate_record(record));
+      records.push_back(record);
+    }
+    for (std::size_t i = records.size(); i > 1; --i) {
+      const std::size_t j = random.bounded(static_cast<std::uint32_t>(i));
+      std::swap(records[i - 1], records[j]);
+    }
+    std::string error;
+    const auto graph = bb::build_causal_graph(records, &error);
+    CHECK(error.empty());
+    CHECK_EQ(graph.size(), records.size());
+    for (const auto& edge : graph.edges) {
+      CHECK(edge.from < edge.to);
+      CHECK(graph.records[edge.from].seq < graph.records[edge.to].seq);
+      CHECK(edge.kind == bb::CausalEdge::Kind::Cause ||
+            edge.kind == bb::CausalEdge::Kind::Parent ||
+            edge.kind == bb::CausalEdge::Kind::Span ||
+            edge.kind == bb::CausalEdge::Kind::Correlation);
+    }
+    const auto layout = bb::layout_causal_graph(graph);
+    CHECK_EQ(layout.points.size(), graph.size());
+    for (std::size_t i = 0; i < layout.points.size(); ++i) {
+      CHECK(layout.points[i].layer <= layout.layers);
+      CHECK(layout.points[i].row < layout.widest_layer);
+    }
+    const auto explanation = bb::explain_latest_failure(graph);
+    if (explanation.found) {
+      CHECK(!explanation.chain.empty());
+      CHECK(explanation.chain.size() <= graph.size());
+      CHECK_EQ(explanation.findings.size(), explanation.chain.size());
+    }
+    const auto same = bb::compare_traces(graph, graph);
+    CHECK(!same.event_divergence);
+    CHECK(!same.state_divergence);
+  }
+}
