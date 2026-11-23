@@ -57,6 +57,28 @@ file(GLOB BLACKBOX_LIB_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/demo/*.cpp"
 )
+set(BLACKBOX_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(BLACKBOX_ASSETS_CPP "${BLACKBOX_GENERATED_DIR}/assets.cpp")
+file(MAKE_DIRECTORY "${BLACKBOX_GENERATED_DIR}")
+set(BLACKBOX_ASSET_SOURCES
+  "${CMAKE_CURRENT_SOURCE_DIR}/ui/index.html"
+  "${CMAKE_CURRENT_SOURCE_DIR}/ui/app.css"
+  "${CMAKE_CURRENT_SOURCE_DIR}/ui/app.js"
+)
+add_custom_command(
+  OUTPUT "${BLACKBOX_ASSETS_CPP}"
+  COMMAND "${CMAKE_COMMAND}"
+    -DBLACKBOX_ASSET_DIR=${CMAKE_CURRENT_SOURCE_DIR}/ui
+    -DBLACKBOX_OUTPUT=${BLACKBOX_ASSETS_CPP}
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_assets.cmake"
+  DEPENDS ${BLACKBOX_ASSET_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_assets.cmake"
+  COMMENT "Embedding Blackbox UI assets"
+  VERBATIM
+)
+set_source_files_properties("${BLACKBOX_ASSETS_CPP}" PROPERTIES GENERATED TRUE)
+list(APPEND BLACKBOX_LIB_SOURCES "${BLACKBOX_ASSETS_CPP}")
+
 add_library(blackbox STATIC ${BLACKBOX_LIB_SOURCES})
 target_include_directories(blackbox PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(blackbox PUBLIC blackbox_options Threads::Threads)

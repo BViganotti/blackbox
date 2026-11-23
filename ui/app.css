@@ -1,0 +1,22 @@
+:root {
+  color-scheme: dark;
+  --bg: #0e1116;
+  --panel: #161b22;
+  --line: #2b3440;
+  --text: #d7dee8;
+  --muted: #8b98a8;
+  --accent: #61c8ff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+main { padding: 20px; }
+h1 { font-size: 18px; margin: 0 0 6px; }
+p { color: var(--muted); }
