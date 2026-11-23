@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -64,6 +65,7 @@ struct SpanHandle {
 };
 
 class Recorder;
+struct RecorderLifetime;  // internal coordination for Span lifetime safety
 
 /// Result of reading a window of records from a recorder.
 struct RecorderSnapshot {
@@ -75,7 +77,8 @@ struct RecorderSnapshot {
 };
 
 /// RAII span. The destructor ends the span with the last status set through
-/// set_status(). A Span must not outlive its Recorder.
+/// set_status(). If the Recorder is destroyed first, ending the span becomes a
+/// safe no-op; other Recorder methods still require a live recorder.
 class Span {
  public:
   Span() noexcept = default;
@@ -96,10 +99,12 @@ class Span {
 
  private:
   friend class Recorder;
-  Span(Recorder* recorder, SpanHandle handle) noexcept;
+  Span(Recorder* recorder, SpanHandle handle,
+       std::shared_ptr<RecorderLifetime> lifetime) noexcept;
   void abandon() noexcept;
 
   Recorder* recorder_ = nullptr;
+  std::shared_ptr<RecorderLifetime> lifetime_;
   SpanHandle handle_;
   Status status_ = Status::Ok;
   bool active_ = false;
@@ -238,6 +243,7 @@ class Recorder {
   RecorderConfig config_;
   Ring ring_;
   std::uint64_t token_ = 0;
+  std::shared_ptr<RecorderLifetime> lifetime_;
   std::atomic<std::uint64_t> rejected_{0};
   std::atomic<std::uint64_t> spans_started_{0};
   std::atomic<std::uint64_t> spans_ended_{0};
@@ -245,6 +251,25 @@ class Recorder {
   mutable std::recursive_mutex dump_mutex_;
   bool crash_installed_ = false;
   std::string crash_error_;
+};
+
+/// RAII request boundary for embedders: clears the thread context, installs a
+/// fresh correlation id and clears it again on destruction. Not nestable. The
+/// scope must not outlive its Recorder; it only covers the calling thread.
+class RequestScope {
+ public:
+  explicit RequestScope(Recorder& recorder, CorrelationId correlation = 0);
+  ~RequestScope();
+  RequestScope(const RequestScope&) = delete;
+  RequestScope& operator=(const RequestScope&) = delete;
+  RequestScope(RequestScope&&) = delete;
+  RequestScope& operator=(RequestScope&&) = delete;
+
+  CorrelationId correlation() const noexcept { return correlation_; }
+
+ private:
+  Recorder* recorder_ = nullptr;
+  CorrelationId correlation_ = kNoCorrelation;
 };
 
 }  // namespace bb

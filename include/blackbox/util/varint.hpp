@@ -22,7 +22,9 @@ constexpr std::size_t uvarint_size(std::uint64_t value) noexcept {
 /// passed to the constructor.
 class Encoder {
  public:
-  explicit Encoder(std::span<std::byte> out) noexcept : out_(out) {}
+  explicit Encoder(std::span<std::byte> out,
+                   bool async_signal_safe = false) noexcept
+      : out_(out), async_signal_safe_(async_signal_safe) {}
 
   bool ok() const noexcept { return ok_; }
   std::size_t size() const noexcept { return pos_; }
@@ -46,6 +48,7 @@ class Encoder {
 
   std::span<std::byte> out_;
   std::size_t pos_ = 0;
+  bool async_signal_safe_ = false;
   bool ok_ = true;
 };
 

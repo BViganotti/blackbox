@@ -27,6 +27,9 @@
 namespace bb {
 namespace {
 
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+              "crash handling requires lock-free 64-bit atomics");
+
 constexpr char kHeaderMagic[8] = {'B', 'B', 'X', 'D', 'M', 'P', '0', '1'};
 constexpr char kFooterMagic[8] = {'B', 'B', 'X', 'E', 'N', 'D', '0', '1'};
 constexpr std::uint32_t kDumpVersion = 1;
@@ -110,7 +113,8 @@ bool visit_record(void* raw, const Record& record) noexcept {
   auto& writer = *static_cast<CrashWriter*>(raw);
   HandlerState& state = handler_state();
   Encoder encoder(std::span<std::byte>(state.encode_buffer,
-                                      sizeof(state.encode_buffer)));
+                                      sizeof(state.encode_buffer)),
+                  true);
   if (!encode_record(record, encoder, nullptr)) {
     writer.ok = false;
     return false;

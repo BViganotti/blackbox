@@ -9,6 +9,7 @@
 #include <atomic>
 #include <string>
 #include <filesystem>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -428,4 +429,30 @@ BB_TEST(recorder_dump_guard_serialises_listing_and_flush) {
   CHECK(flushed.ok);
   const auto after = recorder.list_dumps(10);
   CHECK_EQ(after.size(), 1u);
+}
+
+BB_TEST(recorder_request_scope_installs_and_clears_context) {
+  bb::Recorder recorder(bb::RecorderConfig{64});
+  {
+    bb::RequestScope request(recorder, 4242);
+    CHECK_EQ(request.correlation(), 4242u);
+    CHECK_EQ(recorder.current_correlation(), 4242u);
+    CHECK(recorder.log(bb::Level::Info, "inside request"));
+    CHECK(recorder.current_trace().is_zero());
+  }
+  CHECK_EQ(recorder.current_correlation(), 0u);
+  CHECK(recorder.log(bb::Level::Info, "outside request"));
+  const auto snapshot = recorder.snapshot();
+  CHECK_EQ(snapshot.records.size(), 2u);
+  CHECK_EQ(snapshot.records[0].correlation, 4242u);
+  CHECK_EQ(snapshot.records[1].correlation, 0u);
+}
+
+BB_TEST(recorder_span_is_safe_after_recorder_destruction) {
+  auto recorder = std::make_unique<bb::Recorder>(bb::RecorderConfig{64});
+  bb::Span span = recorder->span("orphan");
+  CHECK(span.active());
+  recorder.reset();
+  CHECK(!span.end());
+  CHECK(!span.active());
 }

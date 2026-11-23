@@ -83,6 +83,23 @@ BB_TEST(signed_varint_roundtrip) {
   }
 }
 
+BB_TEST(encoder_signal_safe_mode_matches_normal_mode) {
+  const std::string text = "signal-safe string with bytes";
+  std::array<std::byte, 256> normal_buffer{};
+  std::array<std::byte, 256> safe_buffer{};
+  bb::Encoder normal(normal_buffer);
+  bb::Encoder safe(safe_buffer, true);
+  normal.raw_string(text);
+  safe.raw_string(text);
+  normal.ivarint(-12345);
+  safe.ivarint(-12345);
+  CHECK(normal.ok());
+  CHECK(safe.ok());
+  CHECK_EQ(normal.size(), safe.size());
+  CHECK(std::equal(normal.written().begin(), normal.written().end(),
+                   safe.written().begin()));
+}
+
 BB_TEST(encoder_reports_overflow_without_writing) {
   std::array<std::byte, 3> buffer{};
   bb::Encoder encoder(buffer);

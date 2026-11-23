@@ -59,7 +59,14 @@ void Encoder::bytes(const void* data, std::size_t size) noexcept {
   if (!reserve(size)) {
     return;
   }
-  std::memcpy(out_.data() + pos_, data, size);
+  if (async_signal_safe_) {
+    const auto* source = static_cast<const unsigned char*>(data);
+    for (std::size_t i = 0; i < size; ++i) {
+      out_[pos_ + i] = static_cast<std::byte>(source[i]);
+    }
+  } else {
+    std::memcpy(out_.data() + pos_, data, size);
+  }
   pos_ += size;
 }
 

@@ -15,6 +15,11 @@
 
 namespace bb {
 
+struct RecorderLifetime {
+  std::mutex mutex;
+  bool alive = true;
+};
+
 struct Recorder::ThreadState {
   const Recorder* owner = nullptr;
   std::uint64_t token = 0;
@@ -27,7 +32,9 @@ struct Recorder::ThreadState {
 };
 
 Recorder::Recorder(RecorderConfig config)
-    : config_(config), ring_(config_.ring_capacity) {
+    : config_(config),
+      ring_(config_.ring_capacity),
+      lifetime_(std::make_shared<RecorderLifetime>()) {
   token_ = random_u64();
   if (token_ == 0) {
     token_ = 1;
@@ -42,6 +49,10 @@ Recorder::Recorder(RecorderConfig config)
 }
 
 Recorder::~Recorder() {
+  {
+    std::lock_guard<std::mutex> guard(lifetime_->mutex);
+    lifetime_->alive = false;
+  }
   if (crash_installed_) {
     (void)uninstall_crash_handler(&ring_);
   }
@@ -334,7 +345,7 @@ Span Recorder::span(std::string_view name,
   if (!handle.valid()) {
     return Span();
   }
-  return Span(this, handle);
+  return Span(this, handle, lifetime_);
 }
 
 TraceId Recorder::current_trace() const { return state().trace; }
@@ -471,11 +482,16 @@ std::unique_lock<std::recursive_mutex> Recorder::lock_dumps() const {
   return std::unique_lock<std::recursive_mutex>(dump_mutex_);
 }
 
-Span::Span(Recorder* recorder, SpanHandle handle) noexcept
-    : recorder_(recorder), handle_(handle), active_(true) {}
+Span::Span(Recorder* recorder, SpanHandle handle,
+           std::shared_ptr<RecorderLifetime> lifetime) noexcept
+    : recorder_(recorder),
+      lifetime_(std::move(lifetime)),
+      handle_(handle),
+      active_(true) {}
 
 Span::Span(Span&& other) noexcept
     : recorder_(other.recorder_),
+      lifetime_(std::move(other.lifetime_)),
       handle_(other.handle_),
       status_(other.status_),
       active_(other.active_) {
@@ -486,6 +502,7 @@ Span& Span::operator=(Span&& other) noexcept {
   if (this != &other) {
     end();
     recorder_ = other.recorder_;
+    lifetime_ = std::move(other.lifetime_);
     handle_ = other.handle_;
     status_ = other.status_;
     active_ = other.active_;
@@ -497,7 +514,13 @@ Span& Span::operator=(Span&& other) noexcept {
 Span::~Span() { end(); }
 
 bool Span::end() {
-  if (!active_ || recorder_ == nullptr) {
+  if (!active_ || recorder_ == nullptr || !lifetime_) {
+    return false;
+  }
+  std::lock_guard<std::mutex> guard(lifetime_->mutex);
+  if (!lifetime_->alive) {
+    active_ = false;
+    recorder_ = nullptr;
     return false;
   }
   active_ = false;
@@ -506,8 +529,23 @@ bool Span::end() {
 
 void Span::abandon() noexcept {
   recorder_ = nullptr;
+  lifetime_.reset();
   handle_ = SpanHandle{};
   active_ = false;
+}
+
+RequestScope::RequestScope(Recorder& recorder, CorrelationId correlation)
+    : recorder_(&recorder),
+      correlation_(correlation == kNoCorrelation ? new_correlation_id()
+                                                  : correlation) {
+  recorder_->reset_thread_context();
+  recorder_->set_correlation(correlation_);
+}
+
+RequestScope::~RequestScope() {
+  if (recorder_ != nullptr) {
+    recorder_->reset_thread_context();
+  }
 }
 
 }  // namespace bb

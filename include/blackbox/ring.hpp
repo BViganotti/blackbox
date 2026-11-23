@@ -37,6 +37,8 @@ struct RingStats {
 /// clear() requires exclusive access.
 class Ring {
  public:
+  static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+                "the crash path requires lock-free 64-bit atomics");
   static constexpr std::size_t kMinCapacity = 8;
   static constexpr std::size_t kMaxCapacity = 1u << 17;
   static constexpr std::size_t kDefaultCapacity = 4096;
@@ -110,6 +112,7 @@ class Ring {
   };
 
   bool read_slot(std::uint64_t seq, Record& out) const noexcept;
+  bool read_slot_signal(std::uint64_t seq, Record& out) const noexcept;
   std::uint64_t oldest_for(std::uint64_t next) const noexcept;
   void lock() noexcept;
   void unlock() noexcept;

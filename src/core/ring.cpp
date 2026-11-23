@@ -88,6 +88,31 @@ bool Ring::read_slot(std::uint64_t seq, Record& out) const noexcept {
   return true;
 }
 
+bool Ring::read_slot_signal(std::uint64_t seq, Record& out) const noexcept {
+  const Slot& slot = slots_[seq & mask_];
+  const std::uint64_t stamp = slot.stamp.load(std::memory_order_acquire);
+  if (stamp != seq * 2 + 2) {
+    return false;
+  }
+  std::array<std::uint64_t, kRecordWords> words{};
+  for (std::size_t i = 0; i < kRecordWords; ++i) {
+    words[i] = slot.words[i].load(std::memory_order_relaxed);
+  }
+  if (slot.stamp.load(std::memory_order_acquire) != stamp) {
+    return false;
+  }
+  auto* destination = reinterpret_cast<unsigned char*>(&out);
+  std::size_t copied = 0;
+  for (std::size_t i = 0; i < kRecordWords && copied < sizeof(Record); ++i) {
+    const std::uint64_t word = words[i];
+    for (unsigned byte = 0; byte < 8 && copied < sizeof(Record); ++byte) {
+      destination[copied++] = static_cast<unsigned char>(
+          (word >> (byte * 8)) & 0xFFu);
+    }
+  }
+  return copied == sizeof(Record);
+}
+
 std::uint64_t Ring::oldest_for(std::uint64_t next) const noexcept {
   return next > capacity_ ? next - capacity_ : 1;
 }
@@ -203,7 +228,7 @@ std::size_t Ring::for_each_published_signal(SignalVisitor visitor,
   std::size_t visited = 0;
   for (std::uint64_t seq = oldest;; ++seq) {
     Record record;
-    if (read_slot(seq, record)) {
+    if (read_slot_signal(seq, record)) {
       if (!visitor(context, record)) {
         break;
       }
