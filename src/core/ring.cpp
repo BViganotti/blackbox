@@ -41,7 +41,7 @@ void Ring::lock() noexcept {
 
 void Ring::unlock() noexcept { lock_.clear(std::memory_order_release); }
 
-bool Ring::push(const Record& record) {
+bool Ring::push(const Record& record, std::uint64_t* assigned_seq) {
   if (!validate_record(record)) {
     rejected_.fetch_add(1, std::memory_order_relaxed);
     return false;
@@ -64,6 +64,9 @@ bool Ring::push(const Record& record) {
     slot.words[i].store(words[i], std::memory_order_relaxed);
   }
   slot.stamp.store(seq * 2 + 2, std::memory_order_release);
+  if (assigned_seq != nullptr) {
+    *assigned_seq = seq;
+  }
   unlock();
   return true;
 }

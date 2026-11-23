@@ -51,7 +51,10 @@ class Ring {
 
   /// Validates and appends a record. The ring assigns record.seq. Returns false
   /// for an invalid record and increments the rejected counter.
-  bool push(const Record& record);
+  /// Validates and appends a record. The ring assigns record.seq. Returns false
+  /// for an invalid record and increments the rejected counter. When
+  /// `assigned_seq` is non-null it receives the assigned sequence.
+  bool push(const Record& record, std::uint64_t* assigned_seq = nullptr);
 
   struct ReadResult {
     std::size_t count = 0;     ///< records written to the output array

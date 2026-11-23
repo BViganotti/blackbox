@@ -263,8 +263,9 @@ bool validate_record(const Record& record, std::string* error) {
     return set_error(error, "metric without name");
   }
   if (record.kind == RecordKind::StateChange) {
-    if (record_state_key(record).empty()) {
-      return set_error(error, "state change without key");
+    const std::string_view key = record_state_key(record);
+    if (key.empty() || !valid_attribute_key(key)) {
+      return set_error(error, "state change without a valid key");
     }
   } else if (!record_state_key(record).empty()) {
     return set_error(error, "state key on a non-state record");

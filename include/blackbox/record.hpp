@@ -43,7 +43,7 @@ enum class Status : std::uint8_t {
 
 inline constexpr std::size_t kMaxNameBytes = 63;
 inline constexpr std::size_t kMaxMessageBytes = 127;
-inline constexpr std::size_t kMaxStateKeyBytes = 39;
+inline constexpr std::size_t kMaxStateKeyBytes = 27;
 
 /// Upper bound for one stored record. The ring allocates slots of exactly this
 /// size, so the memory budget is capacity * kRecordStorageBytes.
