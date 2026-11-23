@@ -18,6 +18,7 @@
     nodeById: new Map(),
     seqToNode: new Map(),
     dumps: [],
+    lastDumpsLoaded: 0,
     dumpMeta: null,
     compareLeft: "",
     compareRight: "",
@@ -269,6 +270,7 @@
     try {
       const data = await requestJson("/api/dumps");
       state.dumps = Array.isArray(data.dumps) ? data.dumps : [];
+      state.lastDumpsLoaded = Date.now();
       renderDumps();
     } catch (error) {
       if (!options.silent) showToast(`Cannot list dumps: ${error.message}`, "error");
@@ -372,6 +374,12 @@
     }
     if (!options.quiet) graph.autoFit = true;
     renderAll();
+    if (
+      state.view === "live" &&
+      Date.now() - state.lastDumpsLoaded > 30000
+    ) {
+      loadDumps({ silent: true });
+    }
     if (state.selectedSeq !== null) {
       const row = document.querySelector(`[data-seq="${state.selectedSeq}"]`);
       if (row && row.scrollIntoView) row.scrollIntoView({ block: "nearest" });
