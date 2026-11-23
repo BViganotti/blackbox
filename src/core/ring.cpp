@@ -114,7 +114,7 @@ Ring::ReadResult Ring::read_from(std::uint64_t after_seq, Record* out,
   }
   const std::uint64_t next = next_seq_.load(std::memory_order_acquire);
   const std::uint64_t newest = next - 1;
-  if (newest == 0) {
+  if (newest == 0 || after_seq >= newest) {
     return result;
   }
   const std::uint64_t oldest = oldest_for(next);

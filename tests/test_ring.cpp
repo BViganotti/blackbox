@@ -84,6 +84,18 @@ BB_TEST(ring_incremental_reads) {
   CHECK_EQ(result.lost, 0u);
 }
 
+BB_TEST(ring_read_from_future_is_empty) {
+  bb::Ring ring(16);
+  for (std::uint64_t i = 1; i <= 5; ++i) {
+    CHECK(ring.push(make_record(i)));
+  }
+  std::vector<bb::Record> records(4);
+  const auto result = ring.read_from(UINT64_MAX, records.data(), records.size());
+  CHECK_EQ(result.count, 0u);
+  CHECK_EQ(result.lost, 0u);
+  CHECK_EQ(result.next_seq, UINT64_MAX);
+}
+
 BB_TEST(ring_reports_overwritten_records) {
   bb::Ring ring(8);
   for (std::uint64_t i = 1; i <= 20; ++i) {
