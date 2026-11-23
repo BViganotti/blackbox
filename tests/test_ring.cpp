@@ -1,6 +1,7 @@
 #include "harness.hpp"
 
 #include <blackbox/ring.hpp>
+#include <blackbox/util/random.hpp>
 #include <blackbox/util/time.hpp>
 
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <array>
 
 namespace {
 
@@ -245,4 +247,72 @@ BB_TEST(ring_reader_observes_only_complete_records) {
   CHECK_EQ(read_failures.load(), 0);
   CHECK(observed.load() > 0);
   CHECK(ring.stats().produced == kTotal);
+}
+
+BB_TEST(ring_randomized_reads_match_the_retained_window) {
+  bb::Xoshiro128 random(0x51A9E);
+  const std::array<std::size_t, 4> capacities = {8, 16, 32, 64};
+  for (const std::size_t capacity : capacities) {
+    for (int round = 0; round < 12; ++round) {
+      bb::Ring ring(capacity);
+      std::uint64_t produced = 0;
+      const std::uint32_t pushes = random.bounded(400);
+      for (std::uint32_t i = 0; i < pushes; ++i) {
+        CHECK(ring.push(make_record(produced + 1)));
+        ++produced;
+      }
+      CHECK_EQ(ring.newest_seq(), produced);
+      const std::uint64_t oldest = produced + 1 > capacity ? produced + 1 - capacity : 1;
+      CHECK_EQ(ring.oldest_available(), oldest);
+      std::vector<bb::Record> buffer(80);
+      for (int read = 0; read < 20; ++read) {
+        const std::uint64_t after = random.bounded(
+            static_cast<std::uint32_t>(produced + 8));
+        const std::size_t max = 1 + random.bounded(80);
+        const auto result = ring.read_from(after, buffer.data(), max);
+        const std::uint64_t expected_lost =
+            after + 1 < oldest ? oldest - 1 - after : 0;
+        CHECK_EQ(result.lost, expected_lost);
+        const std::uint64_t start = after < oldest - 1 ? oldest - 1 : after;
+        const std::uint64_t available = produced > start ? produced - start : 0;
+        const std::uint64_t expected_count = std::min<std::uint64_t>(available, max);
+        CHECK_EQ(result.count, static_cast<std::size_t>(expected_count));
+        for (std::size_t i = 0; i < result.count; ++i) {
+          CHECK_EQ(buffer[i].seq, start + i + 1);
+          CHECK_EQ(buffer[i].int_value, static_cast<std::int64_t>(start + i + 1));
+          CHECK(bb::validate_record(buffer[i]));
+        }
+        if (result.count > 0) {
+          CHECK_EQ(result.next_seq, start + result.count);
+        } else {
+          CHECK_EQ(result.next_seq, after);
+        }
+      }
+    }
+  }
+}
+
+BB_TEST(ring_randomized_rejections_do_not_move_sequences) {
+  bb::Xoshiro128 random(0xBADF00D);
+  bb::Ring ring(32);
+  const std::size_t memory = ring.memory_bytes();
+  std::uint64_t accepted = 0;
+  std::uint64_t rejected = 0;
+  for (int i = 0; i < 500; ++i) {
+    if (random.next_u32() % 5 == 0) {
+      bb::Record invalid{};
+      invalid.kind = static_cast<bb::RecordKind>(0);
+      CHECK(!ring.push(invalid));
+      ++rejected;
+    } else {
+      CHECK(ring.push(make_record(accepted + 1)));
+      ++accepted;
+    }
+    CHECK_EQ(ring.newest_seq(), accepted);
+  }
+  const auto stats = ring.stats();
+  CHECK_EQ(stats.rejected, rejected);
+  CHECK_EQ(stats.produced, accepted);
+  CHECK_EQ(ring.memory_bytes(), memory);
+  CHECK(ring.memory_bytes() <= 32u * (bb::kRecordStorageBytes + 64u));
 }
