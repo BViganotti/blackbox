@@ -5,7 +5,10 @@
 
 #include <algorithm>
 #include <array>
+#include <exception>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 #include <utility>
 
 namespace bb {
@@ -371,6 +374,47 @@ RecorderSnapshot Recorder::snapshot(std::size_t max_records) const {
     }
   }
   return snapshot;
+}
+
+DumpResult Recorder::flush_dump() {
+  DumpResult result;
+  if (config_.dump_directory.empty()) {
+    result.error = "no dump directory configured";
+    return result;
+  }
+  std::lock_guard<std::mutex> guard(dump_mutex_);
+  std::error_code directory_error;
+  std::filesystem::create_directories(config_.dump_directory, directory_error);
+  if (directory_error) {
+    result.error = "cannot create dump directory: " + directory_error.message();
+    return result;
+  }
+  const RecorderSnapshot current = snapshot(ring_.capacity());
+  std::string suffix;
+  try {
+    suffix = random_token(3);
+  } catch (const std::exception&) {
+    suffix = "000000";
+  }
+  const std::string name = "bbx-" + std::to_string(now_wall_ns()) + "-" +
+                           std::to_string(current.last_seq) + "-" + suffix +
+                           ".bbx";
+  const std::string path =
+      (std::filesystem::path(config_.dump_directory) / name).string();
+  DumpWriteOptions options;
+  options.created_wall_ns = now_wall_ns();
+  std::string error;
+  if (!write_dump_file(path, current.records, options, &error)) {
+    result.error = error;
+    return result;
+  }
+  result.ok = true;
+  result.path = path;
+  return result;
+}
+
+std::vector<DumpFileInfo> Recorder::list_dumps(std::size_t limit) const {
+  return list_dump_files(config_.dump_directory, limit);
 }
 
 Span::Span(Recorder* recorder, SpanHandle handle) noexcept

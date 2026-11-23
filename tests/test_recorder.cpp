@@ -1,4 +1,5 @@
 #include "harness.hpp"
+#include "support.hpp"
 
 #include <blackbox/recorder.hpp>
 #include <blackbox/util/time.hpp>
@@ -7,6 +8,7 @@
 #include <limits>
 #include <atomic>
 #include <string>
+#include <filesystem>
 #include <thread>
 #include <vector>
 
@@ -304,4 +306,73 @@ BB_TEST(recorder_generic_record_uses_context) {
   CHECK(snap.records[1].trace == handle.trace);
   CHECK_EQ(snap.records[1].span, handle.span);
   CHECK_EQ(snap.records[1].correlation, snap.records[0].correlation);
+}
+
+BB_TEST(recorder_flush_dump_roundtrip_and_listing) {
+  bbtest::TempDir temp;
+  bb::RecorderConfig config;
+  config.ring_capacity = 64;
+  config.dump_directory = temp.file("dumps");
+  bb::Recorder recorder(config);
+  CHECK(recorder.log(bb::Level::Info, "before dump"));
+  const auto handle = recorder.begin_span("dumped.span");
+  CHECK(handle.valid());
+  CHECK(recorder.metric("queue.depth", std::int64_t{3}));
+  CHECK(recorder.end_span(handle));
+  CHECK(recorder.state_change("breaker.state", bb::Value::string("closed"),
+                              bb::Value::string("open")));
+
+  const bb::DumpResult flushed = recorder.flush_dump();
+  CHECK(flushed.ok);
+  CHECK(!flushed.path.empty());
+  CHECK(std::filesystem::exists(flushed.path));
+
+  const auto read = bb::read_dump_file(flushed.path);
+  CHECK(read.ok);
+  CHECK(read.complete);
+  CHECK_EQ(read.records.size(), 5u);
+  for (const auto& record : read.records) {
+    CHECK(bb::validate_record(record));
+  }
+
+  const bb::DumpResult second = recorder.flush_dump();
+  CHECK(second.ok);
+  CHECK_NE(second.path, flushed.path);
+  const auto dumps = recorder.list_dumps(10);
+  CHECK_EQ(dumps.size(), 2u);
+  CHECK(dumps[0].valid);
+  CHECK(dumps[1].valid);
+
+  for (const auto& entry : std::filesystem::directory_iterator(
+           std::filesystem::path(config.dump_directory))) {
+    CHECK(entry.path().extension() == ".bbx");
+  }
+}
+
+BB_TEST(recorder_flush_without_directory_fails_cleanly) {
+  bb::Recorder recorder(bb::RecorderConfig{16});
+  CHECK(recorder.log(bb::Level::Info, "nowhere"));
+  const auto result = recorder.flush_dump();
+  CHECK(!result.ok);
+  CHECK(!result.error.empty());
+  CHECK(result.path.empty());
+  CHECK(recorder.list_dumps().empty());
+}
+
+BB_TEST(recorder_dump_keeps_only_retained_records) {
+  bbtest::TempDir temp;
+  bb::RecorderConfig config;
+  config.ring_capacity = 8;
+  config.dump_directory = temp.file("dumps");
+  bb::Recorder recorder(config);
+  for (int i = 0; i < 20; ++i) {
+    CHECK(recorder.log(bb::Level::Debug, "log " + std::to_string(i)));
+  }
+  const auto result = recorder.flush_dump();
+  CHECK(result.ok);
+  const auto read = bb::read_dump_file(result.path);
+  CHECK(read.ok);
+  CHECK_EQ(read.records.size(), 8u);
+  CHECK_EQ(read.records.front().seq, 13u);
+  CHECK_EQ(read.records.back().seq, 20u);
 }

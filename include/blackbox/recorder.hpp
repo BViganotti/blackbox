@@ -2,12 +2,14 @@
 
 #include <blackbox/attribute.hpp>
 #include <blackbox/ids.hpp>
+#include <blackbox/dump.hpp>
 #include <blackbox/record.hpp>
 #include <blackbox/ring.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,6 +20,18 @@ namespace bb {
 struct RecorderConfig {
   /// Bounded ring capacity in records. Memory use is O(capacity).
   std::size_t ring_capacity = Ring::kDefaultCapacity;
+  /// Directory for flushed dumps. Empty disables flush_dump().
+  std::string dump_directory;
+
+  RecorderConfig() = default;
+  explicit RecorderConfig(std::size_t capacity) : ring_capacity(capacity) {}
+};
+
+/// Outcome of writing a dump.
+struct DumpResult {
+  bool ok = false;
+  std::string path;
+  std::string error;
 };
 
 /// Combined recorder and ring counters.
@@ -172,6 +186,15 @@ class Recorder {
   /// Copies the newest `max_records` records in ascending order.
   RecorderSnapshot snapshot(std::size_t max_records = 2048) const;
 
+  /// Writes every retained record to an atomically renamed file in the
+  /// configured dump directory. Serialised with other flushes. Returns an
+  /// error when no directory is configured or the write fails.
+  DumpResult flush_dump();
+
+  /// Lists dump files in the configured directory, newest first. Returns an
+  /// empty vector when no directory is configured.
+  std::vector<DumpFileInfo> list_dumps(std::size_t limit = 64) const;
+
  private:
   struct SpanFrame {
     SpanId span = kNoSpan;
@@ -191,6 +214,7 @@ class Recorder {
   Ring ring_;
   std::uint64_t token_ = 0;
   RecorderStats counters_;
+  std::mutex dump_mutex_;
 };
 
 }  // namespace bb
