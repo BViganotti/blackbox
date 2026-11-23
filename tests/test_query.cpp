@@ -251,3 +251,49 @@ BB_TEST(query_fuzz_parser_never_crashes) {
     }
   }
 }
+
+BB_TEST(query_boolean_identities_hold) {
+  const auto records = sample();
+  const std::vector<std::string> texts = {
+      "kind = error",
+      "level >= warn",
+      "message ~ timeout",
+      "attr.http.status = 500",
+      "state.new = open",
+      "duration > 1ms",
+  };
+  for (const auto& text : texts) {
+    const bb::Query query = must_parse(text);
+    const bb::Query negated = must_parse("NOT (" + text + ")");
+    for (const auto& record : records) {
+      CHECK_EQ(query.matches(record), !negated.matches(record));
+    }
+  }
+  const bb::Query left = must_parse("kind = error OR kind = state_change");
+  const bb::Query right = must_parse("level >= warn");
+  const bb::Query conjunction = must_parse(
+      "(kind = error OR kind = state_change) AND level >= warn");
+  const bb::Query disjunction = must_parse(
+      "(kind = error OR kind = state_change) OR level >= warn");
+  for (const auto& record : records) {
+    CHECK_EQ(conjunction.matches(record),
+             left.matches(record) && right.matches(record));
+    CHECK_EQ(disjunction.matches(record),
+             left.matches(record) || right.matches(record));
+    CHECK_EQ(left.matches(record), left.matches(record));
+  }
+}
+
+BB_TEST(query_typed_attributes_compare_strictly) {
+  bb::Record record = error_record();
+  CHECK(must_parse("attr.http.status = 500").matches(record));
+  CHECK(must_parse("attr.http.status < 501").matches(record));
+  CHECK(must_parse("attr.http.status = 500.0").matches(record));
+  CHECK(must_parse("attr.ratio = 0.25").matches(record));
+  CHECK(must_parse("attr.retry = true").matches(record));
+  CHECK(must_parse("attr.db.system ~ postgres").matches(record));
+  CHECK(!must_parse("attr.db.system ~ mysql").matches(record));
+  CHECK(!must_parse("attr.retry ~ \"true\"").matches(record));
+  record.attrs[0].value = bb::StoredValue{};
+  CHECK(!must_parse("attr.http.status != 500").matches(record));
+}
