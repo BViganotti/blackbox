@@ -11,6 +11,7 @@
     minutes: 15,
     query: "",
     queryError: "",
+    queryHistory: [],
     snapshot: null,
     records: [],
     nodes: [],
@@ -155,6 +156,40 @@
   }
 
   // ---------------------------------------------------------------- HTTP
+
+  const kQueryHistoryKey = "blackbox.queryHistory";
+
+  function loadQueryHistory() {
+    try {
+      const raw = localStorage.getItem(kQueryHistoryKey);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((item) => typeof item === "string" && item.trim().length > 0)
+        .slice(0, 12);
+    } catch {
+      return [];
+    }
+  }
+
+  function saveQueryHistory() {
+    try {
+      localStorage.setItem(kQueryHistoryKey, JSON.stringify(state.queryHistory));
+    } catch {
+      // Private mode or a full quota: history is optional.
+    }
+  }
+
+  function rememberQuery(query) {
+    const value = String(query || "").trim();
+    if (!value) return;
+    state.queryHistory = [
+      value,
+      ...state.queryHistory.filter((item) => item !== value),
+    ].slice(0, 12);
+    saveQueryHistory();
+  }
 
   async function requestJson(url, method = "GET") {
     const target = new URL(url, location.origin);
@@ -833,6 +868,24 @@
     const panel = $("#tab-query");
     if (!panel) return;
     clear(panel);
+    if (state.queryHistory.length > 0) {
+      panel.appendChild(el("div", "section-label", "Recent queries"));
+      const recent = el("div", "chips");
+      for (const query of state.queryHistory) {
+        const chip = el("button", "chip", truncate(query, 54));
+        chip.title = query;
+        chip.addEventListener("click", () => runQuery(query));
+        recent.appendChild(chip);
+      }
+      const clear = el("button", "chip", "Clear history");
+      clear.addEventListener("click", () => {
+        state.queryHistory = [];
+        saveQueryHistory();
+        renderQueryPanel();
+      });
+      recent.appendChild(clear);
+      panel.appendChild(recent);
+    }
     panel.appendChild(el("div", "section-label", "Current query"));
     panel.appendChild(
       el("div", "code", state.query || "(all records)"),
@@ -1581,6 +1634,8 @@
     stopStream();
     const loaded = await loadSnapshot();
     if (loaded) {
+      rememberQuery(query);
+      renderQueryPanel();
       startStream();
       showTab("failure");
     }
@@ -1757,6 +1812,7 @@
 
     const params = new URLSearchParams(location.search);
     state.token = params.get("token") || readCookie("bb_token");
+    state.queryHistory = loadQueryHistory();
     const initialDump = params.get("dump");
     const initialQuery = params.get("q");
     if (initialQuery) {
