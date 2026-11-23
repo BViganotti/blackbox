@@ -153,6 +153,14 @@ BB_TEST(server_auth_assets_and_snapshot) {
   CHECK(health.ok);
   CHECK_EQ(health.status, 200);
   CHECK(health.body.find("\"product\":\"blackbox\"") != std::string::npos);
+  CHECK(health.body.find("\"uptime_ms\":") != std::string::npos);
+
+  const auto unauthorized_stats = get(port, "/api/stats");
+  CHECK_EQ(unauthorized_stats.status, 401);
+  const auto stats = get(port, "/api/stats?token=" + token);
+  CHECK_EQ(stats.status, 200);
+  CHECK(stats.body.find("\"produced\":") != std::string::npos);
+  CHECK(stats.body.find("\"crash_handler\":true") != std::string::npos);
 
   const auto unauthorized = get(port, "/api/snapshot");
   CHECK_EQ(unauthorized.status, 401);

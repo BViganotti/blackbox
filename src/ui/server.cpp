@@ -447,6 +447,7 @@ struct UiServer::Impl {
   std::mutex clients_mutex;
   std::unordered_set<int> clients;
   std::atomic<int> active_sse{0};
+  std::int64_t started_wall_ns = 0;
 
   bool start(std::string* error);
   void stop();
@@ -540,6 +541,7 @@ bool UiServer::Impl::start(std::string* error) {
   }
   listen_fd = fd;
   port = ntohs(address.sin_port);
+  started_wall_ns = now_wall_ns();
   running.store(true, std::memory_order_release);
   started = true;
   try {
@@ -1063,6 +1065,8 @@ Response UiServer::Impl::route(const Request& request) {
     out.string(kVersion);
     out.key("crash_handler");
     out.boolean(recorder.crash_handler_active());
+    out.key("uptime_ms");
+    out.number(started_wall_ns > 0 ? (now_wall_ns() - started_wall_ns) / 1'000'000 : 0);
     out.end_object();
     Response response;
     response.body = out.str();
@@ -1076,6 +1080,27 @@ Response UiServer::Impl::route(const Request& request) {
   }
   if (request.method == "GET" && request.path == "/api/snapshot") {
     return serve_snapshot(request, kDefaultLimit);
+  }
+  if (request.method == "GET" && request.path == "/api/stats") {
+    JsonWriter out;
+    out.begin_object();
+    out.key("ok");
+    out.boolean(true);
+    out.key("stats");
+    write_recorder_stats_json(out, recorder.stats());
+    out.key("crash_handler");
+    out.boolean(recorder.crash_handler_active());
+    out.key("crash_error");
+    out.string(recorder.crash_error());
+    out.key("uptime_ms");
+    out.number(started_wall_ns > 0 ? (now_wall_ns() - started_wall_ns) / 1'000'000 : 0);
+    out.end_object();
+    if (!out.ok()) {
+      return json_error(500, "stats response too large");
+    }
+    Response response;
+    response.body = out.str();
+    return response;
   }
   if (request.method == "GET" && request.path == "/api/query") {
     return serve_snapshot(request, 500);
