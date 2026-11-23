@@ -77,6 +77,7 @@ Fuzz and benchmark:
 ./build/blackbox_bench --quick
 make soak SOAK_SECONDS=60           # bounded concurrent soak
 SECONDS_TO_RUN=10 ./tools/ui_smoke.sh build   # manual Chrome smoke on macOS
+./tools/package_smoke.sh build                # install + find_package consumer
 ```
 
 ## Run the workbench
@@ -227,14 +228,14 @@ build). These are host measurements, not guarantees:
 
 | Benchmark | Result |
 |---|---:|
-| Ring single-producer push | ~236 ns/event (4.24M events/s) |
-| Ring four-producer push | ~480 ns/event (2.08M events/s) |
-| Ring snapshot read | ~149 ns/record (6.71M records/s) |
-| Dump write (4096 records) | ~15.8 MiB/s |
-| Dump strict read + validate | ~102 MiB/s (672 ns/record) |
-| Query evaluation | ~9.1 ns/record |
-| Causal build + layout + explain (5000 records) | ~1.48 ms/trace |
-| Record JSON serialisation | ~182 MiB/s |
+| Ring single-producer push | ~245 ns/event (4.07M events/s) |
+| Ring four-producer push | ~447 ns/event (2.24M events/s) |
+| Ring snapshot read | ~146 ns/record (6.85M records/s) |
+| Dump write (4096 records) | ~15.0 MiB/s |
+| Dump strict read + validate | ~101 MiB/s (680 ns/record) |
+| Query evaluation | ~9.0 ns/record |
+| Causal build + layout + explain (5000 records) | ~1.54 ms/trace |
+| Record JSON serialisation | ~175 MiB/s |
 
 Run `./build/blackbox_bench` to reproduce on your machine.
 
@@ -280,6 +281,7 @@ docs/               format, architecture, query, embedding and hardening docs
 - [Limitations](LIMITATIONS.md)
 - [Packaging and consumption](docs/packaging.md)
 - [Service integration](docs/integration.md)
+- [Verification record](docs/verification.md)
 - [Documentation index](docs/README.md)
 
 ## Production use
