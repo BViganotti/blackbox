@@ -266,6 +266,30 @@ BB_TEST(server_dump_browser_and_flush) {
   CHECK(opened.body.find("\"record_count\":6") != std::string::npos);
   CHECK(opened.body.find("dump log 3") != std::string::npos);
 
+  CHECK(recorder.log(bb::Level::Warn, "diverging record"));
+  const auto second_flush = request(port, post);
+  CHECK_EQ(second_flush.status, 200);
+  const auto all_dumps = recorder.list_dumps(10);
+  CHECK_EQ(all_dumps.size(), 2u);
+  std::string first_name;
+  std::string second_name;
+  for (const auto& dump : all_dumps) {
+    if (dump.meta.record_count == 6) first_name = dump.name;
+    if (dump.meta.record_count == 7) second_name = dump.name;
+  }
+  CHECK(!first_name.empty());
+  CHECK(!second_name.empty());
+  const auto compared = get(port, "/api/compare?left=" + first_name +
+                                   "&right=" + second_name + "&token=" + token);
+  CHECK_EQ(compared.status, 200);
+  CHECK(compared.body.find("\"event_divergence\":true") != std::string::npos);
+  CHECK(compared.body.find("\"event_index\":6") != std::string::npos);
+  CHECK(compared.body.find("\"left\":{") != std::string::npos);
+
+  const auto missing_compare = get(port, "/api/compare?left=nope.bbx&right=" +
+                                          second_name + "&token=" + token);
+  CHECK_EQ(missing_compare.status, 404);
+
   server.stop();
 }
 

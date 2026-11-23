@@ -464,6 +464,7 @@ struct UiServer::Impl {
   Response serve_dumps();
   Response serve_download(const Request& request);
   Response serve_open(const Request& request);
+  Response serve_compare(const Request& request);
   Response serve_flush();
   void serve_sse(int fd, const Request& request);
   bool build_snapshot(const Request& request, std::uint64_t default_limit,
@@ -968,6 +969,121 @@ Response UiServer::Impl::serve_open(const Request& request) {
   return response;
 }
 
+Response UiServer::Impl::serve_compare(const Request& request) {
+  const std::string* left_name = request.param("left");
+  const std::string* right_name = request.param("right");
+  if (left_name == nullptr || right_name == nullptr || left_name->empty() ||
+      right_name->empty()) {
+    return json_error(400, "compare requires left and right dump names");
+  }
+  const auto dumps = recorder.list_dumps(128);
+  const DumpFileInfo* left_info = nullptr;
+  const DumpFileInfo* right_info = nullptr;
+  for (const auto& dump : dumps) {
+    if (dump.name == *left_name) {
+      left_info = &dump;
+    }
+    if (dump.name == *right_name) {
+      right_info = &dump;
+    }
+  }
+  if (left_info == nullptr || right_info == nullptr) {
+    return json_error(404, "one or both dumps were not found");
+  }
+  DumpReadOptions options;
+  options.require_footer = false;
+  const DumpReadResult left = read_dump_file(left_info->path, options);
+  const DumpReadResult right = read_dump_file(right_info->path, options);
+  if (!left.ok || !right.ok) {
+    return json_error(400, "cannot read one or both dumps");
+  }
+  std::string left_error;
+  std::string right_error;
+  const CausalGraph left_graph = build_causal_graph(left.records, &left_error);
+  const CausalGraph right_graph = build_causal_graph(right.records, &right_error);
+  if (!left_error.empty() || !right_error.empty()) {
+    return json_error(400, "cannot analyse one or both dumps");
+  }
+  const TraceComparison comparison = compare_traces(left_graph, right_graph);
+  const auto event_seq = [](const CausalGraph& graph, std::uint32_t node) {
+    return node < graph.records.size() ? graph.records[node].seq : 0;
+  };
+  JsonWriter out;
+  out.begin_object();
+  out.key("ok");
+  out.boolean(true);
+  out.key("left");
+  out.begin_object();
+  out.key("name");
+  out.string(left_info->name);
+  out.key("record_count");
+  out.number(static_cast<std::uint64_t>(left.records.size()));
+  out.key("complete");
+  out.boolean(left.complete);
+  out.key("truncated");
+  out.boolean(left.truncated);
+  out.key("corrupted");
+  out.boolean(left.corrupted);
+  out.key("error");
+  out.string(left.error);
+  out.end_object();
+  out.key("right");
+  out.begin_object();
+  out.key("name");
+  out.string(right_info->name);
+  out.key("record_count");
+  out.number(static_cast<std::uint64_t>(right.records.size()));
+  out.key("complete");
+  out.boolean(right.complete);
+  out.key("truncated");
+  out.boolean(right.truncated);
+  out.key("corrupted");
+  out.boolean(right.corrupted);
+  out.key("error");
+  out.string(right.error);
+  out.end_object();
+  out.key("comparison");
+  out.begin_object();
+  out.key("event_divergence");
+  out.boolean(comparison.event_divergence);
+  out.key("event_index");
+  out.number(static_cast<std::uint64_t>(comparison.event_index));
+  out.key("left_seq");
+  if (comparison.left_event == kInvalidNode) {
+    out.null();
+  } else {
+    out.number(event_seq(left_graph, comparison.left_event));
+  }
+  out.key("right_seq");
+  if (comparison.right_event == kInvalidNode) {
+    out.null();
+  } else {
+    out.number(event_seq(right_graph, comparison.right_event));
+  }
+  out.key("event_detail");
+  out.string(comparison.event_detail);
+  out.key("state_divergence");
+  out.boolean(comparison.state_divergence);
+  out.key("state_key");
+  out.string(comparison.state_key);
+  out.key("state_index");
+  out.number(static_cast<std::uint64_t>(comparison.state_index));
+  out.key("left_value");
+  write_value_json(out, comparison.left_value);
+  out.key("right_value");
+  write_value_json(out, comparison.right_value);
+  out.key("state_detail");
+  out.string(comparison.state_detail);
+  out.end_object();
+  out.end_object();
+  if (!out.ok()) {
+    return json_error(500, "comparison response too large");
+  }
+  Response response;
+  response.body = out.str();
+  return response;
+}
+
 Response UiServer::Impl::serve_flush() {
   const DumpResult result = recorder.flush_dump();
   JsonWriter out;
@@ -1113,6 +1229,9 @@ Response UiServer::Impl::route(const Request& request) {
   }
   if (request.method == "GET" && request.path == "/api/dump/open") {
     return serve_open(request);
+  }
+  if (request.method == "GET" && request.path == "/api/compare") {
+    return serve_compare(request);
   }
   if (request.method == "POST" && request.path == "/api/dump") {
     if (!require_post_token(request)) {
