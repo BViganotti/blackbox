@@ -57,7 +57,9 @@ Recorder::ThreadState& Recorder::state() const {
   return local;
 }
 
-void Recorder::reject() noexcept { ++counters_.rejected; }
+void Recorder::reject() noexcept {
+  rejected_.fetch_add(1, std::memory_order_relaxed);
+}
 
 bool Recorder::fill_attributes(Record& record, const Attribute* attrs,
                                std::size_t count) {
@@ -280,7 +282,7 @@ SpanHandle Recorder::begin_span(std::string_view name,
   std::memcpy(frame.name, record.name, sizeof(frame.name));
   ++ctx.depth;
   ctx.current_span = record.span;
-  ++counters_.spans_started;
+  spans_started_.fetch_add(1, std::memory_order_relaxed);
   return SpanHandle{record.trace, record.span};
 }
 
@@ -290,7 +292,7 @@ bool Recorder::end_span(const SpanHandle& handle, Status status,
   if (!handle.valid() || ctx.depth == 0 ||
       ctx.frames[ctx.depth - 1].span != handle.span ||
       !(ctx.trace == handle.trace)) {
-    ++counters_.spans_dropped;
+    spans_dropped_.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
   SpanFrame& frame = ctx.frames[ctx.depth - 1];
@@ -322,7 +324,7 @@ bool Recorder::end_span(const SpanHandle& handle, Status status,
   --ctx.depth;
   ctx.current_span =
       ctx.depth > 0 ? ctx.frames[ctx.depth - 1].span : kNoSpan;
-  ++counters_.spans_ended;
+  spans_ended_.fetch_add(1, std::memory_order_relaxed);
   return true;
 }
 
@@ -363,8 +365,12 @@ void Recorder::reset_thread_context() noexcept {
 RingStats Recorder::ring_stats() const { return ring_.stats(); }
 
 RecorderStats Recorder::stats() const {
-  RecorderStats stats = counters_;
+  RecorderStats stats;
   stats.ring = ring_.stats();
+  stats.rejected = rejected_.load(std::memory_order_relaxed);
+  stats.spans_started = spans_started_.load(std::memory_order_relaxed);
+  stats.spans_ended = spans_ended_.load(std::memory_order_relaxed);
+  stats.spans_dropped = spans_dropped_.load(std::memory_order_relaxed);
   return stats;
 }
 

@@ -6,6 +6,7 @@
 #include <blackbox/record.hpp>
 #include <blackbox/ring.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -226,7 +227,10 @@ class Recorder {
   RecorderConfig config_;
   Ring ring_;
   std::uint64_t token_ = 0;
-  RecorderStats counters_;
+  std::atomic<std::uint64_t> rejected_{0};
+  std::atomic<std::uint64_t> spans_started_{0};
+  std::atomic<std::uint64_t> spans_ended_{0};
+  std::atomic<std::uint64_t> spans_dropped_{0};
   std::mutex dump_mutex_;
   bool crash_installed_ = false;
   std::string crash_error_;
