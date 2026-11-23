@@ -165,6 +165,8 @@ bool parse_footer(std::span<const std::byte> bytes, std::uint64_t& count,
 
 class OutputFile {
  public:
+  void set_limit(std::size_t limit) { limit_ = limit; }
+
   OutputFile() = default;
   ~OutputFile() {
     if (fd_ >= 0) {
@@ -201,6 +203,10 @@ class OutputFile {
   }
 
   bool write_all(const void* data, std::size_t size, std::string& error) {
+    if (size > limit_ || written_ > limit_ - size) {
+      error = "dump exceeds the configured file size limit";
+      return false;
+    }
     const auto* bytes = static_cast<const unsigned char*>(data);
     std::size_t offset = 0;
     while (offset < size) {
@@ -219,6 +225,7 @@ class OutputFile {
       }
       offset += static_cast<std::size_t>(written);
     }
+    written_ += size;
     return true;
   }
 
@@ -245,6 +252,8 @@ class OutputFile {
   int fd_ = -1;
   std::string final_path_;
   std::string temp_path_;
+  std::size_t written_ = 0;
+  std::size_t limit_ = kDefaultMaxDumpFileBytes;
   bool committed_ = false;
 };
 
@@ -351,6 +360,10 @@ bool write_dump_file(std::string_view path, std::span<const Record> records,
     err = "unknown dump flags requested";
     return false;
   }
+  if (options.max_file_bytes < kHeaderSize + kFooterSize) {
+    err = "dump file size limit is smaller than the header and footer";
+    return false;
+  }
   std::uint64_t previous = 0;
   for (const Record& record : records) {
     if (!validate_record(record)) {
@@ -378,6 +391,7 @@ bool write_dump_file(std::string_view path, std::span<const Record> records,
   }
 
   OutputFile file;
+  file.set_limit(options.max_file_bytes);
   if (!file.open(path, err)) {
     return false;
   }
@@ -700,6 +714,40 @@ bool read_dump_metadata(std::string_view path, DumpMetadata& out,
   if (!parse_header(header, parsed, err)) {
     return false;
   }
+  const bool has_footer = static_cast<std::uint64_t>(status.st_size) >=
+                          static_cast<std::uint64_t>(kHeaderSize + kFooterSize);
+  std::array<std::byte, kFooterSize> footer{};
+  bool footer_valid = false;
+  if (has_footer) {
+    const int reopen = ::open(owned.c_str(), O_RDONLY | O_CLOEXEC);
+    if (reopen >= 0) {
+      const off_t footer_offset = static_cast<off_t>(status.st_size) -
+                                  static_cast<off_t>(kFooterSize);
+      std::size_t footer_read = 0;
+      while (footer_read < footer.size()) {
+        const ssize_t got = ::pread(reopen, footer.data() + footer_read,
+                                    footer.size() - footer_read,
+                                    footer_offset + static_cast<off_t>(footer_read));
+        if (got < 0) {
+          if (errno == EINTR) {
+            continue;
+          }
+          break;
+        }
+        if (got == 0) {
+          break;
+        }
+        footer_read += static_cast<std::size_t>(got);
+      }
+      ::close(reopen);
+      if (footer_read == footer.size()) {
+        std::uint64_t count = 0;
+        std::uint32_t records_crc = 0;
+        std::string footer_error;
+        footer_valid = parse_footer(footer, count, records_crc, footer_error);
+      }
+    }
+  }
   out = DumpMetadata{};
   out.version = static_cast<std::uint16_t>(parsed.version);
   out.flags = static_cast<std::uint16_t>(parsed.flags);
@@ -709,6 +757,7 @@ bool read_dump_metadata(std::string_view path, DumpMetadata& out,
   out.last_seq = parsed.last_seq;
   out.string_count = parsed.string_count;
   out.file_size = static_cast<std::uint64_t>(status.st_size);
+  out.footer_valid = footer_valid;
   return true;
 }
 
@@ -747,6 +796,7 @@ std::vector<DumpFileInfo> list_dump_files(std::string_view directory,
     }
     std::string error;
     info.valid = read_dump_metadata(info.path, info.meta, &error);
+    info.complete = info.valid && info.meta.footer_valid;
     info.error = error;
     dumps.push_back(std::move(info));
   }

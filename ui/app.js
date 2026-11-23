@@ -1063,9 +1063,11 @@
       const meta = el(
         "div",
         "meta",
-        `${dump.valid ? "valid" : "invalid"} · ${dump.record_count} records · ${formatBytes(
-          dump.size_bytes,
-        )}${dump.created_wall_ns ? ` · ${formatClock(dump.time)}` : ""}`,
+        `${
+          dump.valid ? (dump.complete ? "complete" : "header only") : "invalid"
+        } · ${dump.record_count} records · ${formatBytes(dump.size_bytes)}${
+          dump.created_wall_ns ? ` · ${formatClock(dump.time)}` : ""
+        }`,
       );
       left.appendChild(meta);
       if (!dump.valid && dump.error) {

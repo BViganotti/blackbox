@@ -208,6 +208,16 @@ BB_TEST(server_auth_assets_and_snapshot) {
   const auto malformed = request(port, "GARBAGE\r\n\r\n");
   CHECK_EQ(malformed.status, 400);
 
+  const auto bad_host =
+      request(port, "GET /api/health HTTP/1.1\r\nHost: attacker.example\r\n\r\n");
+  CHECK_EQ(bad_host.status, 403);
+  const auto missing_host = request(port, "GET /api/health HTTP/1.1\r\n\r\n");
+  CHECK_EQ(missing_host.status, 403);
+  const auto localhost_host =
+      request(port, "GET /api/health HTTP/1.1\r\nHost: localhost:" +
+                        std::to_string(port) + "\r\n\r\n");
+  CHECK_EQ(localhost_host.status, 200);
+
   server.stop();
   CHECK(!server.running());
 }
@@ -243,6 +253,7 @@ BB_TEST(server_dump_browser_and_flush) {
   CHECK_EQ(dumps.status, 200);
   CHECK(dumps.body.find("\"dumps\":[") != std::string::npos);
   CHECK(dumps.body.find("\"valid\":true") != std::string::npos);
+  CHECK(dumps.body.find("\"complete\":true") != std::string::npos);
   CHECK(dumps.body.find(".bbx") != std::string::npos);
 
   const std::size_t name_start = dumps.body.find("\"name\":\"");

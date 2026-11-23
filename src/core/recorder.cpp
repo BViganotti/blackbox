@@ -401,7 +401,7 @@ DumpResult Recorder::flush_dump() {
     result.error = "no dump directory configured";
     return result;
   }
-  std::lock_guard<std::mutex> guard(dump_mutex_);
+  std::unique_lock<std::recursive_mutex> guard(dump_mutex_);
   std::error_code directory_error;
   std::filesystem::create_directories(config_.dump_directory, directory_error);
   if (directory_error) {
@@ -429,13 +429,33 @@ DumpResult Recorder::flush_dump() {
   }
   result.ok = true;
   result.path = path;
-  if (config_.max_dumps > 0) {
-    const auto dumps = list_dump_files(config_.dump_directory,
-                                        config_.max_dumps + 64);
-    if (dumps.size() > config_.max_dumps) {
-      for (std::size_t i = config_.max_dumps; i < dumps.size(); ++i) {
+  if (config_.max_dumps > 0 || config_.max_dump_bytes > 0 ||
+      config_.max_dump_age_seconds > 0) {
+    const auto dumps = list_dump_files(config_.dump_directory, 512);
+    std::uint64_t kept_bytes = 0;
+    const std::int64_t now = now_wall_ns();
+    const std::int64_t max_age_ns = config_.max_dump_age_seconds == 0
+                                        ? 0
+                                        : static_cast<std::int64_t>(
+                                              config_.max_dump_age_seconds) *
+                                              1'000'000'000ll;
+    for (std::size_t i = 0; i < dumps.size(); ++i) {
+      const DumpFileInfo& dump = dumps[i];
+      const bool is_current = dump.path == path;
+      const bool over_count =
+          config_.max_dumps > 0 && i >= config_.max_dumps && !is_current;
+      const bool over_bytes = config_.max_dump_bytes > 0 && i > 0 &&
+                              kept_bytes + dump.size_bytes >
+                                  config_.max_dump_bytes &&
+                              !is_current;
+      const bool old =
+          max_age_ns > 0 && dump.meta.created_wall_ns > 0 &&
+          now - dump.meta.created_wall_ns > max_age_ns && !is_current;
+      if (over_count || over_bytes || old) {
         std::error_code remove_error;
-        std::filesystem::remove(dumps[i].path, remove_error);
+        std::filesystem::remove(dump.path, remove_error);
+      } else {
+        kept_bytes += dump.size_bytes;
       }
     }
   }
@@ -443,7 +463,12 @@ DumpResult Recorder::flush_dump() {
 }
 
 std::vector<DumpFileInfo> Recorder::list_dumps(std::size_t limit) const {
+  std::unique_lock<std::recursive_mutex> guard(dump_mutex_);
   return list_dump_files(config_.dump_directory, limit);
+}
+
+std::unique_lock<std::recursive_mutex> Recorder::lock_dumps() const {
+  return std::unique_lock<std::recursive_mutex>(dump_mutex_);
 }
 
 Span::Span(Recorder* recorder, SpanHandle handle) noexcept

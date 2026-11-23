@@ -376,3 +376,56 @@ BB_TEST(recorder_dump_keeps_only_retained_records) {
   CHECK_EQ(read.records.front().seq, 13u);
   CHECK_EQ(read.records.back().seq, 20u);
 }
+
+BB_TEST(recorder_dump_retention_by_count_and_size) {
+  bbtest::TempDir temp;
+  bb::RecorderConfig config;
+  config.ring_capacity = 64;
+  config.dump_directory = temp.file("count-dumps");
+  config.max_dumps = 1;
+  bb::Recorder recorder(config);
+  CHECK(recorder.log(bb::Level::Info, "first"));
+  const auto first = recorder.flush_dump();
+  CHECK(first.ok);
+  CHECK(recorder.log(bb::Level::Info, "second"));
+  const auto second = recorder.flush_dump();
+  CHECK(second.ok);
+  const auto dumps = recorder.list_dumps(10);
+  CHECK_EQ(dumps.size(), 1u);
+  CHECK_EQ(dumps[0].name, std::filesystem::path(second.path).filename().string());
+  CHECK(std::filesystem::exists(second.path));
+  CHECK(!std::filesystem::exists(first.path));
+
+  bb::RecorderConfig bytes_config;
+  bytes_config.ring_capacity = 64;
+  bytes_config.dump_directory = temp.file("byte-dumps");
+  bytes_config.max_dumps = 0;
+  bytes_config.max_dump_bytes = 1;
+  bb::Recorder bytes_recorder(bytes_config);
+  CHECK(bytes_recorder.log(bb::Level::Info, "one"));
+  const auto one = bytes_recorder.flush_dump();
+  CHECK(one.ok);
+  CHECK(bytes_recorder.log(bb::Level::Info, "two"));
+  const auto two = bytes_recorder.flush_dump();
+  CHECK(two.ok);
+  const auto byte_dumps = bytes_recorder.list_dumps(10);
+  CHECK_EQ(byte_dumps.size(), 1u);
+  CHECK_EQ(byte_dumps[0].name, std::filesystem::path(two.path).filename().string());
+}
+
+BB_TEST(recorder_dump_guard_serialises_listing_and_flush) {
+  bbtest::TempDir temp;
+  bb::RecorderConfig config;
+  config.ring_capacity = 32;
+  config.dump_directory = temp.file("guard-dumps");
+  config.max_dumps = 2;
+  bb::Recorder recorder(config);
+  CHECK(recorder.log(bb::Level::Info, "guarded"));
+  const auto guard = recorder.lock_dumps();
+  const auto inside = recorder.list_dumps(10);
+  CHECK(inside.empty());
+  const auto flushed = recorder.flush_dump();
+  CHECK(flushed.ok);
+  const auto after = recorder.list_dumps(10);
+  CHECK_EQ(after.size(), 1u);
+}

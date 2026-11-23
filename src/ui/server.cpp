@@ -456,6 +456,7 @@ struct UiServer::Impl {
   void handle_connection(int fd);
   Response route(const Request& request);
   bool authorized(const Request& request) const;
+  bool host_allowed(const Request& request) const;
   bool token_matches(const std::string& candidate) const;
   bool require_post_token(const Request& request) const;
   Response serve_root(const Request& request);
@@ -498,6 +499,17 @@ bool UiServer::Impl::authorized(const Request& request) const {
 bool UiServer::Impl::require_post_token(const Request& request) const {
   const std::string* header = request.header("x-blackbox-token");
   return header != nullptr && token_matches(*header);
+}
+
+bool UiServer::Impl::host_allowed(const Request& request) const {
+  const std::string* host = request.header("host");
+  if (host == nullptr || host->empty()) {
+    return false;
+  }
+  const std::string with_port = "127.0.0.1:" + std::to_string(port);
+  const std::string localhost_port = "localhost:" + std::to_string(port);
+  return *host == with_port || *host == localhost_port ||
+         *host == "127.0.0.1" || *host == "localhost";
 }
 
 bool UiServer::Impl::start(std::string* error) {
@@ -700,6 +712,10 @@ void UiServer::Impl::handle_connection(int fd) {
     }
     return;
   }
+  if (!host_allowed(request)) {
+    (void)ui::send_response(fd, json_error(403, "host is not allowed"));
+    return;
+  }
   if (request.path == "/api/stream" && request.method == "GET") {
     serve_sse(fd, request);
     return;
@@ -833,6 +849,7 @@ Response UiServer::Impl::serve_snapshot(const Request& request,
 }
 
 Response UiServer::Impl::serve_dumps() {
+  const auto guard = recorder.lock_dumps();
   JsonWriter out;
   out.begin_object();
   out.key("ok");
@@ -847,6 +864,8 @@ Response UiServer::Impl::serve_dumps() {
     out.number(dump.size_bytes);
     out.key("valid");
     out.boolean(dump.valid);
+    out.key("complete");
+    out.boolean(dump.complete);
     out.key("error");
     out.string(dump.error);
     out.key("flags");
@@ -882,6 +901,7 @@ Response UiServer::Impl::serve_download(const Request& request) {
   if (name == nullptr || name->empty()) {
     return json_error(400, "missing dump name");
   }
+  const auto guard = recorder.lock_dumps();
   const auto dumps = recorder.list_dumps(128);
   const DumpFileInfo* found = nullptr;
   for (const auto& dump : dumps) {
@@ -912,6 +932,7 @@ Response UiServer::Impl::serve_open(const Request& request) {
   if (name == nullptr || name->empty()) {
     return json_error(400, "missing dump name");
   }
+  const auto guard = recorder.lock_dumps();
   const auto dumps = recorder.list_dumps(128);
   const DumpFileInfo* found = nullptr;
   for (const auto& dump : dumps) {
@@ -976,6 +997,7 @@ Response UiServer::Impl::serve_compare(const Request& request) {
       right_name->empty()) {
     return json_error(400, "compare requires left and right dump names");
   }
+  const auto guard = recorder.lock_dumps();
   const auto dumps = recorder.list_dumps(128);
   const DumpFileInfo* left_info = nullptr;
   const DumpFileInfo* right_info = nullptr;

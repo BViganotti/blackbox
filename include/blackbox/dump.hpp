@@ -18,6 +18,11 @@ inline constexpr std::uint16_t kDumpFlagPartial = 1u << 2;
 inline constexpr std::uint16_t kDumpKnownFlags =
     kDumpFlagInlineStrings | kDumpFlagCrash | kDumpFlagPartial;
 
+/// Shared default ceiling for a dump file. The writer refuses to exceed it and
+/// the reader refuses to load more than it, so the two halves of the public API
+/// agree on what a readable dump is.
+inline constexpr std::size_t kDefaultMaxDumpFileBytes = 256u * 1024u * 1024u;
+
 struct DumpMetadata {
   std::uint16_t version = 0;
   std::uint16_t flags = 0;
@@ -27,6 +32,9 @@ struct DumpMetadata {
   std::uint64_t last_seq = 0;
   std::uint32_t string_count = 0;
   std::uint64_t file_size = 0;
+  /// True when read_dump_metadata found a syntactically valid footer. It does
+  /// not prove every record checksum; use read_dump_file for that.
+  bool footer_valid = false;
 };
 
 struct DumpWriteOptions {
@@ -38,6 +46,8 @@ struct DumpWriteOptions {
   std::uint16_t extra_flags = 0;
   /// Zero means "now". Tests set this for byte-stable golden files.
   std::int64_t created_wall_ns = 0;
+  /// Hard ceiling for the final file, including header, frames and footer.
+  std::size_t max_file_bytes = kDefaultMaxDumpFileBytes;
 };
 
 /// Writes a complete dump atomically: temp file, fsync, rename. Records must be
@@ -54,7 +64,7 @@ struct DumpReadOptions {
   /// the result flags say what went wrong.
   bool require_footer = true;
   std::size_t max_records = 1'000'000;
-  std::size_t max_file_bytes = 256u * 1024u * 1024u;
+  std::size_t max_file_bytes = kDefaultMaxDumpFileBytes;
   std::uint32_t max_frame_bytes = 8u * 1024u * 1024u;
 };
 
@@ -89,7 +99,8 @@ struct DumpFileInfo {
   std::string path;
   std::string name;
   std::uint64_t size_bytes = 0;
-  bool valid = false;
+  bool valid = false;      ///< header parsed successfully
+  bool complete = false;   ///< footer is structurally valid
   std::string error;
   DumpMetadata meta;
 };

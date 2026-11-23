@@ -26,8 +26,13 @@ struct RecorderConfig {
   /// Install the async-signal-safe crash handler when dump_directory is set.
   bool install_crash_handlers = true;
   /// Oldest flushed dumps beyond this count are removed after a successful
-  /// flush. Zero disables pruning.
+  /// flush. Zero disables the count rule.
   std::size_t max_dumps = 64;
+  /// Total bytes allowed across retained dumps. The just-written dump is always
+  /// kept even when it alone exceeds the budget. Zero disables the byte rule.
+  std::uint64_t max_dump_bytes = 512ull * 1024ull * 1024ull;
+  /// Remove dumps older than this many seconds. Zero disables the age rule.
+  std::uint64_t max_dump_age_seconds = 0;
 
   RecorderConfig() = default;
   explicit RecorderConfig(std::size_t capacity) : ring_capacity(capacity) {}
@@ -201,6 +206,12 @@ class Recorder {
   /// empty vector when no directory is configured.
   std::vector<DumpFileInfo> list_dumps(std::size_t limit = 64) const;
 
+  /// Serialises dump-directory reads against flushing/pruning. Server handlers
+  /// hold this guard while listing and reading a file so retention cannot
+  /// unlink it mid-request. The mutex is recursive, so list_dumps() may be
+  /// called while the guard is held.
+  std::unique_lock<std::recursive_mutex> lock_dumps() const;
+
   /// True when this recorder installed the process crash handler. A failed
   /// installation is reported through crash_error() but does not fail
   /// construction: recording continues without crash dumps.
@@ -231,7 +242,7 @@ class Recorder {
   std::atomic<std::uint64_t> spans_started_{0};
   std::atomic<std::uint64_t> spans_ended_{0};
   std::atomic<std::uint64_t> spans_dropped_{0};
-  std::mutex dump_mutex_;
+  mutable std::recursive_mutex dump_mutex_;
   bool crash_installed_ = false;
   std::string crash_error_;
 };

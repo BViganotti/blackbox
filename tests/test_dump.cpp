@@ -399,3 +399,56 @@ BB_TEST(dump_randomized_roundtrip) {
     check_records_match(read.records, records);
   }
 }
+
+BB_TEST(dump_writer_enforces_byte_limit) {
+  bbtest::TempDir temp;
+  const auto records = bbtest::sample_records(20);
+  const std::string path = temp.file("too-big.bbx");
+  bb::DumpWriteOptions options;
+  options.max_file_bytes = 1024;
+  std::string error;
+  CHECK(!bb::write_dump_file(path, records, options, &error));
+  CHECK(!error.empty());
+  CHECK(!std::filesystem::exists(path));
+  for (const auto& entry : std::filesystem::directory_iterator(temp.path())) {
+    CHECK(entry.path().extension() != ".tmp");
+  }
+  error.clear();
+  options.max_file_bytes = 32;
+  CHECK(!bb::write_dump_file(path, records, options, &error));
+}
+
+BB_TEST(dump_metadata_reports_footer_integrity) {
+  bbtest::TempDir temp;
+  const auto records = bbtest::sample_records(4);
+  const std::string path = temp.file("footer-check.bbx");
+  CHECK(bb::write_dump_file(path, records, {}, nullptr));
+  bb::DumpMetadata metadata;
+  std::string error;
+  CHECK(bb::read_dump_metadata(path, metadata, &error));
+  CHECK(metadata.footer_valid);
+  CHECK_EQ(metadata.record_count, records.size());
+
+  std::vector<std::byte> bytes = bbtest::read_file_bytes(path);
+  CHECK(bytes.size() > 32);
+  bytes.back() = static_cast<std::byte>(0xFF);
+  CHECK(bbtest::write_file_bytes(path, bytes));
+
+  metadata = bb::DumpMetadata{};
+  CHECK(bb::read_dump_metadata(path, metadata, &error));
+  CHECK(!metadata.footer_valid);
+
+  const auto dumps = bb::list_dump_files(temp.path().string());
+  CHECK_EQ(dumps.size(), 1u);
+  CHECK(dumps[0].valid);
+  CHECK(!dumps[0].complete);
+
+  const auto strict = bb::read_dump_file(path);
+  CHECK(!strict.ok);
+  bb::DumpReadOptions recovery;
+  recovery.require_footer = false;
+  const auto recovered = bb::read_dump_file(path, recovery);
+  CHECK(recovered.ok);
+  CHECK(recovered.corrupted);
+  CHECK_EQ(recovered.records.size(), records.size());
+}
