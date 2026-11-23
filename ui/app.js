@@ -18,6 +18,7 @@
     seqToNode: new Map(),
     dumps: [],
     dumpMeta: null,
+    graphFocus: "failure",
     selectedSeq: null,
     activeTab: "failure",
     requestSerial: 0,
@@ -238,6 +239,7 @@
       state.view = "dump";
       state.dumpMeta = data.dump || { name };
       state.queryError = "";
+      state.graphFocus = "failure";
       stopStream();
       stopPolling();
       setLive("dump", "");
@@ -282,6 +284,7 @@
     state.view = "live";
     state.dumpMeta = null;
     state.selectedSeq = null;
+    state.graphFocus = "failure";
     $("#dump-banner")?.classList.add("hidden");
     $("#live-button")?.classList.add("hidden");
     graph.autoFit = true;
@@ -311,6 +314,40 @@
     }
   }
 
+  function graphScope() {
+    const allEdges = state.snapshot?.graph?.edges || [];
+    const failure = state.snapshot?.failure;
+    if (
+      state.graphFocus !== "failure" ||
+      !failure ||
+      !failure.found ||
+      !Array.isArray(failure.chain) ||
+      failure.chain.length < 2
+    ) {
+      return { nodes: state.nodes, edges: allEdges, focused: false };
+    }
+    const ids = new Set(failure.chain.map(Number));
+    const nodes = state.nodes.filter((node) => ids.has(Number(node.id)));
+    if (nodes.length < 2) {
+      return { nodes: state.nodes, edges: allEdges, focused: false };
+    }
+    const visible = new Set(nodes.map((node) => Number(node.id)));
+    const edges = allEdges.filter(
+      (edge) => visible.has(Number(edge.from)) && visible.has(Number(edge.to)),
+    );
+    return { nodes, edges, focused: true };
+  }
+
+  function updateGraphFocusButton() {
+    const button = $("#graph-focus");
+    if (!button) return;
+    const scope = graphScope();
+    button.textContent = scope.focused ? "Scope: failure" : "Scope: all";
+    button.title = scope.focused
+      ? "Showing the latest failure chain. Click for every retained record."
+      : "Showing every retained record. Click to focus the latest failure.";
+  }
+
   function currentNode() {
     if (state.selectedSeq === null) return null;
     const id = state.seqToNode.get(Number(state.selectedSeq));
@@ -326,6 +363,27 @@
 
   function selectSeq(seq, options = {}) {
     state.selectedSeq = seq === null ? null : Number(seq);
+    const failure = state.snapshot?.failure;
+    if (
+      state.selectedSeq !== null &&
+      state.graphFocus === "failure" &&
+      failure &&
+      failure.found &&
+      Array.isArray(failure.chain)
+    ) {
+      const chainSeqs = new Set(
+        failure.chain
+          .map((id) => state.nodeById.get(String(id)))
+          .filter(Boolean)
+          .map((node) => Number(node.seq)),
+      );
+      if (!chainSeqs.has(Number(state.selectedSeq))) {
+        // The user picked an event outside the focused chain; widen the graph.
+        state.graphFocus = "all";
+        graph.autoFit = true;
+      }
+    }
+    updateGraphFocusButton();
     if (options.tab) showTab(options.tab);
     renderSelection();
     renderEventPanel();
@@ -396,11 +454,15 @@
     });
     const meta = $("#graph-meta");
     if (meta) {
-      const nodeCount = state.nodes.length;
-      const edgeCount = snapshot?.graph?.edges?.length || 0;
+      const scope = graphScope();
+      const nodeCount = scope.nodes.length;
+      const edgeCount = scope.edges.length;
       const layers = snapshot?.graph?.layers || 0;
-      meta.textContent = `${nodeCount} nodes · ${edgeCount} edges · ${layers} layers`;
+      meta.textContent = scope.focused
+        ? `failure chain · ${nodeCount}/${state.nodes.length} nodes · ${layers} layers`
+        : `${nodeCount} nodes · ${edgeCount} edges · ${layers} layers`;
     }
+    updateGraphFocusButton();
     const waterfallMeta = $("#waterfall-meta");
     if (waterfallMeta) {
       waterfallMeta.textContent = `${snapshot?.waterfall?.length || 0} spans`;
@@ -928,13 +990,13 @@
     return "#46566b";
   }
 
-  function fitGraph(width, height) {
-    if (!state.nodes.length) return;
+  function fitGraph(nodes, width, height) {
+    if (!nodes.length) return;
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
-    for (const node of state.nodes) {
+    for (const node of nodes) {
       minX = Math.min(minX, node.x);
       minY = Math.min(minY, node.y);
       maxX = Math.max(maxX, node.x + NODE_WIDTH);
@@ -959,14 +1021,15 @@
     graph.width = width;
     graph.height = height;
     context.clearRect(0, 0, width, height);
+    const scope = graphScope();
     const empty = $("#graph-empty");
-    if (!state.nodes.length) {
+    if (!scope.nodes.length) {
       if (empty) empty.classList.remove("hidden");
       graph.rects = [];
       return;
     }
     if (empty) empty.classList.add("hidden");
-    if (graph.autoFit) fitGraph(width, height);
+    if (graph.autoFit) fitGraph(scope.nodes, width, height);
 
     // subtle dot grid
     context.save();
@@ -988,7 +1051,7 @@
 
     const selected = state.selectedSeq;
     const positions = new Map();
-    for (const node of state.nodes) {
+    for (const node of scope.nodes) {
       positions.set(String(node.id), {
         x: graph.offsetX + Number(node.x) * graph.scale,
         y: graph.offsetY + Number(node.y) * graph.scale,
@@ -998,8 +1061,7 @@
       });
     }
 
-    const edges = state.snapshot?.graph?.edges || [];
-    for (const edge of edges) {
+    for (const edge of scope.edges) {
       const from = positions.get(String(edge.from));
       const to = positions.get(String(edge.to));
       if (!from || !to) continue;
@@ -1039,7 +1101,7 @@
     }
 
     graph.rects = [];
-    for (const node of state.nodes) {
+    for (const node of scope.nodes) {
       const screen = positions.get(String(node.id));
       if (!screen) continue;
       const isSelected = selected !== null && Number(node.seq) === Number(selected);
@@ -1066,9 +1128,15 @@
         context.rect(screen.x, screen.y, screen.width, screen.height);
         context.clip();
         context.fillStyle = isSelected ? "#f2fbff" : "#c9d6e6";
-        context.font = `${Math.max(9, 11 * graph.scale)}px ui-monospace, Menlo, monospace`;
+        const fontSize = Math.max(8, 11 * graph.scale);
+        context.font = `${fontSize}px ui-monospace, Menlo, monospace`;
         context.textBaseline = "middle";
-        const label = truncate(node.label || node.name || node.kind, 26);
+        const available = screen.width - padding * 2 - 10 * graph.scale;
+        const maxCharacters = Math.max(
+          3,
+          Math.floor(available / (fontSize * 0.62)),
+        );
+        const label = truncate(node.label || node.name || node.kind, maxCharacters);
         context.fillText(label, screen.x + padding, screen.y + screen.height / 2);
         context.restore();
         context.save();
@@ -1343,6 +1411,7 @@
     state.query = query;
     state.queryError = "";
     markQueryInvalid(false);
+    state.graphFocus = "failure";
     graph.autoFit = true;
     stopStream();
     const loaded = await loadSnapshot();
@@ -1471,6 +1540,18 @@
     $("#graph-fit")?.addEventListener("click", () => {
       graph.autoFit = true;
       drawGraph();
+    });
+    $("#graph-focus")?.addEventListener("click", () => {
+      const failure = state.snapshot?.failure;
+      if (state.graphFocus === "failure" && (!failure || !failure.found)) {
+        state.graphFocus = "all";
+      } else {
+        state.graphFocus = state.graphFocus === "failure" ? "all" : "failure";
+      }
+      graph.autoFit = true;
+      updateGraphFocusButton();
+      drawGraph();
+      renderStats();
     });
 
     document.addEventListener("keydown", (event) => {
