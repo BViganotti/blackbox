@@ -75,6 +75,8 @@ Fuzz and benchmark:
 ./build/blackbox_fuzz --iterations 30000 --seed 12345
 ./build/blackbox_bench            # full
 ./build/blackbox_bench --quick
+make soak SOAK_SECONDS=60           # bounded concurrent soak
+SECONDS_TO_RUN=10 ./tools/ui_smoke.sh build   # manual Chrome smoke on macOS
 ```
 
 ## Run the workbench
@@ -208,7 +210,9 @@ alternate signal stack and re-raises the signal afterwards.
 | Attribute key / text | 27 / 96 bytes |
 | Name / message / state key | 63 / 127 / 27 bytes |
 | Span nesting | 64 levels per thread |
-| Dump file read | 256 MiB, 1,000,000 records, 8 MiB/frame |
+| Dump file read/write | 256 MiB, 1,000,000 records, 8 MiB/frame |
+| Retained dumps | 64 count, 512 MiB total, optional age |
+| HTTP sockets / workers / SSE | 64 / 12 / 4 |
 | Query source / tokens / nodes / depth | 4096 / 1024 / 512 / 32 |
 | HTTP headers / params / body | 16 KiB / 32 params / 4 KiB |
 | SSE streams | 4 |
@@ -274,7 +278,20 @@ docs/               format, architecture, query, embedding and hardening docs
 - [Testing](docs/testing.md)
 - [Security model](SECURITY.md)
 - [Limitations](LIMITATIONS.md)
+- [Packaging and consumption](docs/packaging.md)
+- [Service integration](docs/integration.md)
 - [Documentation index](docs/README.md)
+
+## Production use
+
+The recorder is bounded and designed for always-on local use, but this project
+is honest about scope: it is a macOS-verified local workbench/library, not a
+TLS/remote multi-tenant service, and it has no CI by requirement. The workbench
+binds only loopback, validates Host headers, requires a random token and caps
+sockets/workers. See [LIMITATIONS.md](LIMITATIONS.md) and
+[docs/packaging.md](docs/packaging.md) before embedding it in a critical
+service; stop producers before destroying the recorder and keep dumps on
+appropriately protected storage.
 
 ## Status
 
