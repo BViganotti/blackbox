@@ -1605,6 +1605,7 @@
 
     const params = new URLSearchParams(location.search);
     state.token = params.get("token") || readCookie("bb_token");
+    const initialDump = params.get("dump");
     const initialQuery = params.get("q");
     if (initialQuery) {
       state.query = initialQuery;
@@ -1623,6 +1624,11 @@
       return;
     }
     try {
+      if (initialDump) {
+        await openDump(initialDump);
+        await loadDumps({ silent: true });
+        return;
+      }
       const loaded = await loadSnapshot();
       await loadDumps({ silent: true });
       if (loaded) startStream();

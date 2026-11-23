@@ -1,5 +1,6 @@
 #include <blackbox/demo.hpp>
 
+#include <blackbox/dump.hpp>
 #include <blackbox/util/random.hpp>
 #include <blackbox/util/time.hpp>
 #include <blackbox/ui_server.hpp>
@@ -12,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -54,10 +56,31 @@ bool parse_u64(std::string_view text, std::uint64_t& out) {
 
 struct AppOptions {
   bool no_browser = false;
+  bool no_demo = false;
+  bool dump_directory_explicit = false;
   long run_seconds = 0;
   std::string dump_directory = default_dump_directory();
   std::size_t capacity = 8192;
+  std::string open_dump;
 };
+
+std::string url_encode(std::string_view text) {
+  static constexpr char kHex[] = "0123456789ABCDEF";
+  std::string out;
+  for (unsigned char c : text) {
+    const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+                      c == '.' || c == '~';
+    if (safe) {
+      out.push_back(static_cast<char>(c));
+    } else {
+      out.push_back('%');
+      out.push_back(kHex[c >> 4]);
+      out.push_back(kHex[c & 0x0F]);
+    }
+  }
+  return out;
+}
 
 void print_usage() {
   std::printf(
@@ -66,6 +89,8 @@ void print_usage() {
       "  --no-browser       do not open the system browser\n"
       "  --run-seconds N    stop after N seconds (0 = until signal)\n"
       "  --dump-dir PATH    directory for dumps\n"
+      "  --open-dump PATH   open a .bbx dump in the workbench on launch\n"
+      "  --no-demo          do not generate demo traffic\n"
       "  --capacity N       records to retain (8..131072)\n"
       "  --help             show this help\n");
 }
@@ -75,6 +100,13 @@ bool parse_options(int argc, char** argv, AppOptions& options) {
     const std::string_view argument(argv[i]);
     if (argument == "--no-browser") {
       options.no_browser = true;
+    } else if (argument == "--no-demo") {
+      options.no_demo = true;
+    } else if (argument == "--open-dump") {
+      if (++i >= argc || argv[i][0] == '\0') {
+        return false;
+      }
+      options.open_dump = argv[i];
     } else if (argument == "--help" || argument == "-h") {
       print_usage();
       std::exit(0);
@@ -92,6 +124,7 @@ bool parse_options(int argc, char** argv, AppOptions& options) {
         return false;
       }
       options.dump_directory = argv[i];
+      options.dump_directory_explicit = true;
     } else if (argument == "--capacity") {
       if (++i >= argc) {
         return false;
@@ -277,13 +310,38 @@ int run_demo_app(int argc, char** argv) {
   std::signal(SIGINT, stop_signal);
   std::signal(SIGTERM, stop_signal);
 
+  std::string initial_dump_name;
+  if (!options.open_dump.empty()) {
+    const std::filesystem::path dump_path(options.open_dump);
+    if (dump_path.extension() != ".bbx") {
+      std::fprintf(stderr, "Blackbox: --open-dump requires a .bbx file\n");
+      return 2;
+    }
+    DumpMetadata metadata;
+    std::string metadata_error;
+    if (!read_dump_metadata(dump_path.string(), metadata, &metadata_error)) {
+      std::fprintf(stderr, "Blackbox: cannot open dump: %s\n",
+                   metadata_error.c_str());
+      return 2;
+    }
+    initial_dump_name = dump_path.filename().string();
+    if (!options.dump_directory_explicit) {
+      const auto parent = dump_path.parent_path();
+      options.dump_directory = parent.empty() ? std::string(".") : parent.string();
+    }
+  }
+
   RecorderConfig config;
   config.ring_capacity = options.capacity;
   config.dump_directory = options.dump_directory;
   config.install_crash_handlers = true;
   Recorder recorder(config);
   DemoService demo(recorder, DemoConfig{1200, 12});
-  UiServer server(recorder, [&demo] { demo.trigger(); });
+  std::function<void()> trigger;
+  if (!options.no_demo) {
+    trigger = [&demo] { demo.trigger(); };
+  }
+  UiServer server(recorder, trigger);
 
   std::string error;
   if (!server.start(&error)) {
@@ -292,8 +350,13 @@ int run_demo_app(int argc, char** argv) {
     demo.stop();
     return 1;
   }
-  demo.start();
-  const std::string url = server.url();
+  if (!options.no_demo) {
+    demo.start();
+  }
+  std::string url = server.url();
+  if (!initial_dump_name.empty()) {
+    url += "&dump=" + url_encode(initial_dump_name);
+  }
   std::printf("%s\n%s\n", build_info().c_str(), url.c_str());
   std::fflush(stdout);
   if (!options.no_browser) {
