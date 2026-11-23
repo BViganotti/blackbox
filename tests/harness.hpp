@@ -57,8 +57,8 @@ inline std::string describe(const char* value) { return value ? value : "<null>"
 
 #define CHECK_EQ(actual, expected)                                        \
   do {                                                                    \
-    const auto& bb_actual = (actual);                                     \
-    const auto& bb_expected = (expected);                                 \
+    const auto bb_actual = (actual);                                      \
+    const auto bb_expected = (expected);                                 \
     if (!(bb_actual == bb_expected)) {                                    \
       ::bbtest::fail(__FILE__, __LINE__, #actual " == " #expected,        \
                      ::bbtest::describe(bb_actual) + " != " +             \
@@ -68,8 +68,8 @@ inline std::string describe(const char* value) { return value ? value : "<null>"
 
 #define CHECK_NE(actual, expected)                                        \
   do {                                                                    \
-    const auto& bb_actual = (actual);                                     \
-    const auto& bb_expected = (expected);                                 \
+    const auto bb_actual = (actual);                                      \
+    const auto bb_expected = (expected);                                 \
     if (bb_actual == bb_expected) {                                       \
       ::bbtest::fail(__FILE__, __LINE__, #actual " != " #expected,        \
                      "both were " + ::bbtest::describe(bb_actual));       \
