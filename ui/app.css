@@ -24,11 +24,12 @@
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; }
+html { height: 100%; }
 
 body {
   margin: 0;
   min-height: 100%;
+  height: auto;
   background:
     radial-gradient(1200px 700px at 15% -20%, rgba(97, 200, 255, 0.08), transparent 60%),
     radial-gradient(900px 600px at 105% 10%, rgba(143, 125, 255, 0.06), transparent 55%),
@@ -69,6 +70,7 @@ button.small { padding: 3px 8px; font-size: 11px; }
 .hidden { display: none !important; }
 
 .topbar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -126,6 +128,7 @@ select {
 }
 
 .stats {
+  flex-shrink: 0;
   display: flex; gap: 1px; overflow-x: auto;
   border-bottom: 1px solid var(--line-soft);
   background: rgba(17, 22, 31, 0.7);
@@ -374,6 +377,7 @@ code, .code {
 .tooltip .muted { display: block; }
 
 .footer {
+  flex-shrink: 0;
   display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   padding: 8px 14px; border-top: 1px solid var(--line-soft);
   color: var(--faint); font-size: 10.5px;
