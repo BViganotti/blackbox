@@ -84,7 +84,10 @@ mode, no compression, no Windows backend and no CI configuration.
 
 ### Verification
 
-Release, ASan/UBSan and TSan builds pass all CTest targets. The deterministic
-fuzz harness completed 50,000 iterations with no invariant violations and the
-benchmark suite was run on an Apple M1 Max. Exact commands, results, LOC and
-known gaps are in [FINAL_REPORT.md](FINAL_REPORT.md).
+Release, ASan/UBSan and TSan builds pass all five CTest targets, including the
+soak smoke. The deterministic fuzz harness completed 50,000 iterations with no
+invariant violations, a 30-second soak produced 20,830 records across 1,666
+scenarios with 27 flushes and no failures, and a separate CMake consumer
+compiled and ran against the installed package. The benchmark suite was run on
+an Apple M1 Max. Exact commands, results, LOC and known gaps are in
+[FINAL_REPORT.md](FINAL_REPORT.md) and [docs/verification.md](docs/verification.md).
