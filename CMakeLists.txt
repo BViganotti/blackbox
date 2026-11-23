@@ -10,6 +10,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+option(BLACKBOX_BUILD_SHARED "Build the library as a shared library" OFF)
 option(BLACKBOX_BUILD_TESTS "Build the test suite" ON)
 option(BLACKBOX_BUILD_BENCH "Build benchmarks" ON)
 option(BLACKBOX_BUILD_FUZZ "Build fuzz harnesses" ON)
@@ -19,11 +20,11 @@ find_package(Threads REQUIRED)
 
 add_library(blackbox_options INTERFACE)
 target_compile_options(blackbox_options INTERFACE
-  -Wall
-  -Wextra
-  -Wpedantic
-  -Wshadow
-  -Werror
+  $<BUILD_INTERFACE:-Wall>
+  $<BUILD_INTERFACE:-Wextra>
+  $<BUILD_INTERFACE:-Wpedantic>
+  $<BUILD_INTERFACE:-Wshadow>
+  $<BUILD_INTERFACE:-Werror>
 )
 target_compile_definitions(blackbox_options INTERFACE
   BLACKBOX_VERSION="${PROJECT_VERSION}"
@@ -48,8 +49,12 @@ elseif(NOT BLACKBOX_SANITIZE STREQUAL "")
   message(FATAL_ERROR "Unknown BLACKBOX_SANITIZE=${BLACKBOX_SANITIZE}")
 endif()
 if(NOT BLACKBOX_SAN_FLAGS STREQUAL "")
-  target_compile_options(blackbox_options INTERFACE ${BLACKBOX_SAN_FLAGS})
-  target_link_options(blackbox_options INTERFACE ${BLACKBOX_SAN_FLAGS})
+  set(BLACKBOX_SAN_BUILD_FLAGS "")
+  foreach(flag IN LISTS BLACKBOX_SAN_FLAGS)
+    list(APPEND BLACKBOX_SAN_BUILD_FLAGS "$<BUILD_INTERFACE:${flag}>")
+  endforeach()
+  target_compile_options(blackbox_options INTERFACE ${BLACKBOX_SAN_BUILD_FLAGS})
+  target_link_options(blackbox_options INTERFACE ${BLACKBOX_SAN_BUILD_FLAGS})
 endif()
 
 file(GLOB BLACKBOX_LIB_SOURCES CONFIGURE_DEPENDS
@@ -79,8 +84,20 @@ add_custom_command(
 set_source_files_properties("${BLACKBOX_ASSETS_CPP}" PROPERTIES GENERATED TRUE)
 list(APPEND BLACKBOX_LIB_SOURCES "${BLACKBOX_ASSETS_CPP}")
 
-add_library(blackbox STATIC ${BLACKBOX_LIB_SOURCES})
-target_include_directories(blackbox PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+if(BLACKBOX_BUILD_SHARED)
+  add_library(blackbox SHARED ${BLACKBOX_LIB_SOURCES})
+else()
+  add_library(blackbox STATIC ${BLACKBOX_LIB_SOURCES})
+endif()
+set_target_properties(blackbox PROPERTIES
+  VERSION "${PROJECT_VERSION}"
+  SOVERSION 1
+  POSITION_INDEPENDENT_CODE ON
+)
+target_include_directories(blackbox PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+)
 target_link_libraries(blackbox PUBLIC blackbox_options Threads::Threads)
 
 function(blackbox_add_executable name source)
@@ -127,10 +144,32 @@ if(BLACKBOX_BUILD_FUZZ)
 endif()
 
 include(GNUInstallDirs)
-install(TARGETS blackbox ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+include(CMakePackageConfigHelpers)
+install(TARGETS blackbox blackbox_options
+        EXPORT blackboxTargets
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+        INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(TARGETS blackbox_launcher RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/blackbox"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(EXPORT blackboxTargets
+        FILE blackboxTargets.cmake
+        NAMESPACE bb::
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/blackbox")
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/blackboxConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/blackboxConfig.cmake"
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/blackbox")
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/blackboxConfigVersion.cmake"
+  VERSION "${PROJECT_VERSION}"
+  COMPATIBILITY SameMajorVersion)
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/blackboxConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/blackboxConfigVersion.cmake"
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/blackbox")
 install(FILES
   "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
   "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
