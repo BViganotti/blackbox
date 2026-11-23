@@ -18,6 +18,10 @@
     seqToNode: new Map(),
     dumps: [],
     dumpMeta: null,
+    compareLeft: "",
+    compareRight: "",
+    compareResult: null,
+    compareError: "",
     graphFocus: "failure",
     selectedSeq: null,
     activeTab: "failure",
@@ -407,6 +411,7 @@
     renderStatePanel();
     renderQueryPanel();
     renderDumps();
+    renderComparePanel();
     renderWaterfall();
     renderEvents();
     drawGraph();
@@ -714,6 +719,116 @@
     renderSelection();
   }
 
+  async function runComparison() {
+    if (!state.compareLeft || !state.compareRight) {
+      showToast("Select two dumps to compare", "error");
+      return;
+    }
+    try {
+      const url = new URL("/api/compare", location.origin);
+      url.searchParams.set("left", state.compareLeft);
+      url.searchParams.set("right", state.compareRight);
+      const data = await requestJson(url);
+      state.compareResult = data;
+      state.compareError = "";
+      showTab("compare");
+      renderComparePanel();
+      showToast("Comparison complete", "ok");
+    } catch (error) {
+      state.compareError = error.message;
+      showTab("compare");
+      renderComparePanel();
+      showToast(error.message, "error");
+    }
+  }
+
+  function compareSide(label, side) {
+    const box = el("div", "compare-side");
+    box.appendChild(el("div", "section-label", label));
+    const name = el("div", "code", side.name || "—");
+    box.appendChild(name);
+    box.appendChild(
+      el(
+        "div",
+        "muted",
+        `${side.record_count || 0} records · ${
+          side.complete ? "complete" : "recovered"
+        }${side.error ? ` · ${side.error}` : ""}`,
+      ),
+    );
+    const open = el("button", "ghost small", "Open");
+    open.addEventListener("click", () => openDump(side.name));
+    box.appendChild(open);
+    return box;
+  }
+
+  function divergenceBox(title, diverged, detail, extra) {
+    const box = el("div", diverged ? "summary" : "summary ok");
+    box.appendChild(el("strong", "", title));
+    box.appendChild(el("div", "", detail || (diverged ? "diverged" : "identical")));
+    if (extra) box.appendChild(el("div", "muted", extra));
+    return box;
+  }
+
+  function renderComparePanel() {
+    const panel = $("#tab-compare");
+    if (!panel) return;
+    clear(panel);
+    if (state.compareError) {
+      panel.appendChild(el("div", "error-box", state.compareError));
+      return;
+    }
+    const data = state.compareResult;
+    if (!data) {
+      panel.appendChild(
+        el(
+          "div",
+          "loading",
+          "Pick two dumps in the Dumps tab and press Compare. Event shape and state transitions are compared; timestamps and ids are ignored.",
+        ),
+      );
+      return;
+    }
+    const sides = el("div", "compare-sides");
+    sides.appendChild(compareSide("Left", data.left || {}));
+    sides.appendChild(compareSide("Right", data.right || {}));
+    panel.appendChild(sides);
+    const comparison = data.comparison || {};
+    panel.appendChild(el("div", "section-label", "First divergence"));
+    const eventExtra = [
+      data.left && comparison.left_seq ? `left seq ${comparison.left_seq}` : "",
+      data.right && comparison.right_seq ? `right seq ${comparison.right_seq}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    panel.appendChild(
+      divergenceBox(
+        comparison.event_divergence ? "Event divergence" : "Event shape",
+        Boolean(comparison.event_divergence),
+        comparison.event_detail ||
+          (comparison.event_divergence
+            ? `at index ${comparison.event_index}`
+            : "No event divergence in the common prefix."),
+        eventExtra,
+      ),
+    );
+    panel.appendChild(
+      divergenceBox(
+        comparison.state_divergence ? "State divergence" : "State transitions",
+        Boolean(comparison.state_divergence),
+        comparison.state_detail ||
+          (comparison.state_divergence
+            ? `key ${comparison.state_key} at index ${comparison.state_index}`
+            : "No state divergence."),
+        comparison.state_divergence
+          ? `left ${formatValue(comparison.left_value)} · right ${formatValue(
+              comparison.right_value,
+            )}`
+          : "",
+      ),
+    );
+  }
+
   function renderQueryPanel() {
     const panel = $("#tab-query");
     if (!panel) return;
@@ -790,6 +905,42 @@
     head.appendChild(refresh);
     head.appendChild(write);
     panel.appendChild(head);
+
+    const valid = state.dumps.filter((dump) => dump.valid);
+    if (valid.length >= 2) {
+      panel.appendChild(el("div", "section-label", "Compare two traces"));
+      const chooser = el("div", "compare-grid");
+      const leftSelect = el("select");
+      const rightSelect = el("select");
+      for (const dump of valid) {
+        leftSelect.appendChild(el("option", "", dump.name));
+        rightSelect.appendChild(el("option", "", dump.name));
+      }
+      if (!state.compareLeft || !valid.some((dump) => dump.name === state.compareLeft)) {
+        state.compareLeft = valid[0].name;
+      }
+      if (!state.compareRight || !valid.some((dump) => dump.name === state.compareRight)) {
+        state.compareRight = valid[1].name;
+      }
+      leftSelect.value = state.compareLeft;
+      rightSelect.value = state.compareRight;
+      leftSelect.addEventListener("change", () => {
+        state.compareLeft = leftSelect.value;
+      });
+      rightSelect.addEventListener("change", () => {
+        state.compareRight = rightSelect.value;
+      });
+      chooser.appendChild(leftSelect);
+      chooser.appendChild(rightSelect);
+      const button = el("button", "primary small", "Compare");
+      button.addEventListener("click", () => runComparison());
+      chooser.appendChild(button);
+      panel.appendChild(chooser);
+    } else if (state.dumps.length > 0) {
+      panel.appendChild(
+        el("div", "loading", "Two valid dumps are required for comparison."),
+      );
+    }
 
     if (state.view === "dump" && state.dumpMeta) {
       panel.appendChild(el("div", "section-label", "Open dump"));
@@ -1521,6 +1672,7 @@
       body.classList.toggle("hidden", body.id !== `tab-${name}`);
     });
     if (name === "dumps") loadDumps({ silent: true });
+    if (name === "compare") renderComparePanel();
   }
 
   function bindTabs() {

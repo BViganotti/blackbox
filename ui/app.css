@@ -348,6 +348,15 @@ code, .code {
 .dump-row .meta { color: var(--faint); font-size: 10.5px; }
 .dump-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dump-actions { display: flex; gap: 5px; }
+.compare-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 6px; margin-bottom: 8px; }
+.compare-grid select { min-width: 0; }
+.compare-sides { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; }
+.compare-side {
+  border: 1px solid var(--line-soft); border-radius: 7px;
+  padding: 8px; background: rgba(0,0,0,0.12); min-width: 0;
+}
+.compare-side .code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
+.compare-side button { margin-top: 6px; }
 .pill {
   display: inline-block; padding: 1px 6px; border-radius: 999px;
   font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em;
