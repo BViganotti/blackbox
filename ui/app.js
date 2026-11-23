@@ -424,6 +424,7 @@
       }
     }
     updateGraphFocusButton();
+    updateQuickFilters();
     if (options.tab) showTab(options.tab);
     renderSelection();
     renderEventPanel();
@@ -441,6 +442,7 @@
 
   function renderAll() {
     renderStats();
+    updateQuickFilters();
     renderFailurePanel();
     renderEventPanel();
     renderStatePanel();
@@ -458,6 +460,13 @@
         state.snapshot.version || ""
       } · 127.0.0.1 · bounded history`;
     }
+  }
+
+  function updateQuickFilters() {
+    document.querySelectorAll("#quick-filters button").forEach((button) => {
+      const query = button.dataset.query || "";
+      button.classList.toggle("active", query === state.query);
+    });
   }
 
   function renderStats() {
@@ -1757,6 +1766,9 @@
     });
     $("#dump-now")?.addEventListener("click", dumpNow);
     $("#demo-trigger")?.addEventListener("click", triggerDemo);
+    document.querySelectorAll("#quick-filters button").forEach((button) => {
+      button.addEventListener("click", () => runQuery(button.dataset.query || ""));
+    });
     $("#live-button")?.addEventListener("click", goLive);
     $("#graph-fit")?.addEventListener("click", () => {
       graph.autoFit = true;

@@ -103,6 +103,14 @@
         <h2 id="timeline-title">Timeline</h2>
         <span class="muted">relative to the first retained record</span>
       </header>
+      <div class="quick-filters" id="quick-filters" role="group" aria-label="Quick filters">
+        <button type="button" data-query="">All</button>
+        <button type="button" data-query="kind = error">Errors</button>
+        <button type="button" data-query="level &gt;= warn">Warn+</button>
+        <button type="button" data-query="kind = span_begin">Spans</button>
+        <button type="button" data-query="kind = state_change">State</button>
+        <button type="button" data-query="kind = metric">Metrics</button>
+      </div>
       <div class="timeline-wrap">
         <canvas id="timeline-canvas" aria-label="Event timeline"></canvas>
       </div>
