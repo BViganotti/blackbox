@@ -28,16 +28,23 @@ and the project uses semantic versioning.
   timeline, event list, request waterfall, failure/event/state/dump/query
   inspectors, SSE updates, query bar and dump browser.
 - Loopback HTTP server with random token authentication, bounded request
-  parsing, fixed worker pool, snapshot/query/dump/SSE endpoints.
+  parsing, fixed worker pool, snapshot/query/stats/dump/compare/SSE endpoints.
 - Deterministic demo service: request → two DB timeouts → breaker open →
   cached fallback → open-breaker request → recovery, with automatic dumps.
 - Launcher that prints a token URL and opens the system browser; `--open-dump`
-  for offline bundles and `--no-demo` for inspection.
+  for offline bundles, `--no-demo` for inspection, `--max-dumps` retention and
+  `--version`/`--help`.
 - Unit, property, malformed-input, fork/crash and real-socket server tests.
 - Deterministic fuzz harness for dumps, queries, record codec and varints.
 - Benchmarks for ring, dump, query, causal analysis and JSON.
+- Dump comparison endpoint and Compare tab: first event-shape and state
+  divergence with sequence links.
+- Local query history (twelve entries), quick filters, timeline tooltips,
+  event JSON copy and periodic dump-list refresh.
+- CMake install rules, headless embedding example and launcher/embedding smoke
+  tests.
 - Documentation: architecture, dump format, query language, embedding, crash
-  safety and testing; MIT license.
+  safety, UI, design decisions, performance, testing and security; MIT license.
 
 ### Security
 
@@ -51,3 +58,10 @@ and the project uses semantic versioning.
 
 See [LIMITATIONS.md](LIMITATIONS.md). There is no TLS, no remote multi-user
 mode, no compression, no Windows backend and no CI configuration.
+
+### Verification
+
+Release, ASan/UBSan and TSan builds pass all CTest targets. The deterministic
+fuzz harness completed 50,000 iterations with no invariant violations and the
+benchmark suite was run on an Apple M1 Max. Exact commands, results, LOC and
+known gaps are in [FINAL_REPORT.md](FINAL_REPORT.md).
