@@ -1,7 +1,9 @@
 BUILD ?= build
 JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
+PREFIX ?= /usr/local
+ITERATIONS ?= 30000
 
-.PHONY: all build test asan tsan release bench fuzz run clean
+.PHONY: all build test asan tsan release bench fuzz install check run clean
 
 all: build
 
@@ -26,7 +28,14 @@ bench: build
 	./$(BUILD)/blackbox_bench
 
 fuzz: build
-	./$(BUILD)/blackbox_fuzz --iterations 20000
+	./$(BUILD)/blackbox_fuzz --iterations $(ITERATIONS)
+
+check: test
+	./$(BUILD)/blackbox_fuzz --iterations 10000
+	./$(BUILD)/blackbox_bench --quick
+
+install: build
+	cmake --install $(BUILD) --prefix $(PREFIX)
 
 run: build
 	./$(BUILD)/blackbox_launcher
