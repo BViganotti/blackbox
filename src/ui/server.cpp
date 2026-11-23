@@ -26,6 +26,7 @@
 #include <string>
 #include <thread>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -426,11 +427,13 @@ Response json_error(int status, std::string_view message) {
 }  // namespace
 
 struct UiServer::Impl {
-  explicit Impl(Recorder& recorder_in) : recorder(recorder_in) {
+  Impl(Recorder& recorder_in, std::function<void()> trigger_in)
+      : recorder(recorder_in), demo_trigger(std::move(trigger_in)) {
     token = random_token(16);
   }
 
   Recorder& recorder;
+  std::function<void()> demo_trigger;
   std::string token;
   int listen_fd = -1;
   std::uint16_t port = 0;
@@ -1092,13 +1095,31 @@ Response UiServer::Impl::route(const Request& request) {
     }
     return serve_flush();
   }
+  if (request.method == "POST" && request.path == "/api/demo/trigger") {
+    if (!require_post_token(request)) {
+      return json_error(403, "POST requires the X-Blackbox-Token header");
+    }
+    if (!demo_trigger) {
+      return json_error(501, "no demo service is attached");
+    }
+    demo_trigger();
+    JsonWriter out;
+    out.begin_object();
+    out.key("ok");
+    out.boolean(true);
+    out.end_object();
+    Response response;
+    response.body = out.str();
+    return response;
+  }
   if (request.method == "GET" || request.method == "HEAD") {
     return serve_asset(request.path);
   }
   return json_error(404, "not found");
 }
 
-UiServer::UiServer(Recorder& recorder) : impl_(new Impl(recorder)) {}
+UiServer::UiServer(Recorder& recorder, std::function<void()> demo_trigger)
+    : impl_(new Impl(recorder, std::move(demo_trigger))) {}
 
 UiServer::~UiServer() { impl_->stop(); }
 

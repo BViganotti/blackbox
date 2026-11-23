@@ -423,6 +423,16 @@ DumpResult Recorder::flush_dump() {
   }
   result.ok = true;
   result.path = path;
+  if (config_.max_dumps > 0) {
+    const auto dumps = list_dump_files(config_.dump_directory,
+                                        config_.max_dumps + 64);
+    if (dumps.size() > config_.max_dumps) {
+      for (std::size_t i = config_.max_dumps; i < dumps.size(); ++i) {
+        std::error_code remove_error;
+        std::filesystem::remove(dumps[i].path, remove_error);
+      }
+    }
+  }
   return result;
 }
 

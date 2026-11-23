@@ -24,6 +24,9 @@ struct RecorderConfig {
   std::string dump_directory;
   /// Install the async-signal-safe crash handler when dump_directory is set.
   bool install_crash_handlers = true;
+  /// Oldest flushed dumps beyond this count are removed after a successful
+  /// flush. Zero disables pruning.
+  std::size_t max_dumps = 64;
 
   RecorderConfig() = default;
   explicit RecorderConfig(std::size_t capacity) : ring_capacity(capacity) {}

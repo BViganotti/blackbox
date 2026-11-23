@@ -97,7 +97,17 @@ if(BLACKBOX_BUILD_TESTS)
   add_executable(blackbox_tests ${BLACKBOX_TEST_SOURCES})
   target_link_libraries(blackbox_tests PRIVATE blackbox)
   add_test(NAME unit COMMAND blackbox_tests)
+  add_test(NAME launcher_smoke COMMAND blackbox_launcher --no-browser
+           --run-seconds 1 --dump-dir "${CMAKE_CURRENT_BINARY_DIR}/smoke-dumps")
+  set_tests_properties(launcher_smoke PROPERTIES TIMEOUT 30)
 endif()
+
+blackbox_add_executable(blackbox_launcher
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/app/launcher.cpp")
+
+add_executable(blackbox_demo
+  "${CMAKE_CURRENT_SOURCE_DIR}/examples/blackbox_demo/main.cpp")
+target_link_libraries(blackbox_demo PRIVATE blackbox)
 
 if(BLACKBOX_BUILD_BENCH)
   blackbox_add_executable(blackbox_bench "${CMAKE_CURRENT_SOURCE_DIR}/src/app/bench_main.cpp")

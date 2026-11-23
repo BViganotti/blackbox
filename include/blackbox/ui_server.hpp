@@ -3,6 +3,7 @@
 #include <blackbox/recorder.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -18,7 +19,9 @@ namespace bb {
 /// handling itself is concurrent. The Recorder must outlive the server.
 class UiServer {
  public:
-  explicit UiServer(Recorder& recorder);
+  /// `demo_trigger` is optional; when set, POST /api/demo/trigger invokes it.
+  explicit UiServer(Recorder& recorder,
+                    std::function<void()> demo_trigger = {});
   ~UiServer();
   UiServer(const UiServer&) = delete;
   UiServer& operator=(const UiServer&) = delete;
