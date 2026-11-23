@@ -326,8 +326,9 @@
     ) {
       return { nodes: state.nodes, edges: allEdges, focused: false };
     }
-    const ids = new Set(failure.chain.map(Number));
-    const nodes = state.nodes.filter((node) => ids.has(Number(node.id)));
+    const nodes = failure.chain
+      .map((id) => state.nodeById.get(String(id)))
+      .filter(Boolean);
     if (nodes.length < 2) {
       return { nodes: state.nodes, edges: allEdges, focused: false };
     }
@@ -917,6 +918,11 @@
       const depth = Math.max(0, Number(row.depth) || 0);
       name.appendChild(el("span", "depth", depth ? `${"· ".repeat(depth)}` : ""));
       name.appendChild(document.createTextNode(row.name));
+      if (duration > 0) {
+        name.appendChild(
+          el("span", "dur-inline", ` · ${formatDuration(duration)}`),
+        );
+      }
       name.title = `${row.name} · ${row.status} · ${formatDuration(duration)}`;
       line.appendChild(name);
       const track = el("div", "wf-track");
@@ -928,9 +934,6 @@
       bar.style.width = `${Math.max(0.3, Math.min(100 - left, width))}%`;
       bar.title = `${row.name} · ${formatDuration(duration)} · ${row.status}`;
       track.appendChild(bar);
-      if (duration > 0) {
-        track.appendChild(el("span", "wf-dur", formatDuration(duration)));
-      }
       line.appendChild(track);
       const activate = () => {
         if (row.begin_node !== undefined) {
@@ -990,6 +993,16 @@
     return "#46566b";
   }
 
+  function focusLayout(nodes) {
+    const perRow = Math.min(5, Math.max(1, nodes.length));
+    return nodes.map((node, index) => {
+      const row = Math.floor(index / perRow);
+      const column = index % perRow;
+      const x = (row % 2 === 0 ? column : perRow - 1 - column) * 250;
+      return { ...node, x, y: row * 90 };
+    });
+  }
+
   function fitGraph(nodes, width, height) {
     if (!nodes.length) return;
     let minX = Infinity;
@@ -1029,7 +1042,8 @@
       return;
     }
     if (empty) empty.classList.add("hidden");
-    if (graph.autoFit) fitGraph(scope.nodes, width, height);
+    const layoutNodes = scope.focused ? focusLayout(scope.nodes) : scope.nodes;
+    if (graph.autoFit) fitGraph(layoutNodes, width, height);
 
     // subtle dot grid
     context.save();
@@ -1051,7 +1065,7 @@
 
     const selected = state.selectedSeq;
     const positions = new Map();
-    for (const node of scope.nodes) {
+    for (const node of layoutNodes) {
       positions.set(String(node.id), {
         x: graph.offsetX + Number(node.x) * graph.scale,
         y: graph.offsetY + Number(node.y) * graph.scale,
@@ -1101,7 +1115,7 @@
     }
 
     graph.rects = [];
-    for (const node of scope.nodes) {
+    for (const node of layoutNodes) {
       const screen = positions.get(String(node.id));
       if (!screen) continue;
       const isSelected = selected !== null && Number(node.seq) === Number(selected);
